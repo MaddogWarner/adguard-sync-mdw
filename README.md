@@ -9,7 +9,8 @@ It runs as a single lightweight container, polls on a fixed interval, records wh
 - **One-way full mirror**, primary → followers: add missing items, update changed ones, and prune follower-only extras (per-domain `prune` toggle).
 - **Six sync domains**: block lists, allowlists, custom user rules, DNS rewrites, upstream DNS, and blocked services.
 - **Drift detection**: every run records the difference between primary and follower *before* applying, viewable on the Drift page.
-- **Dashboard** (FastAPI + HTMX) with Status, Drift, and History pages, a manual **Sync now** trigger, host health, light/dark theme toggle, and a JSON API.
+- **Dashboard** (FastAPI + HTMX) with Status, Drift, History, and Settings pages, a manual **Sync now** trigger, host health, light/dark theme toggle, and a JSON API.
+- **Edit config from the dashboard**: the Settings page writes `config.yaml` live (interval, dry run, retention, log level, TLS, hosts, scope) with a timestamped backup on each save. Passwords are never form fields — they stay in `.env`.
 - **HTTPS by default** with a generated self-signed certificate, or bring your own (see [TLS](#tls)).
 - **Safe by default**: global `dry_run` records intended changes without writing; secrets come from the environment, never the YAML.
 - **Scheduled** every 5, 10, or 15 minutes, with automatic history retention.
@@ -19,19 +20,19 @@ It runs as a single lightweight container, polls on a fixed interval, records wh
 
 **Status** — host health and the latest sync run per follower:
 
-![Status page](https://github.com/MaddogWarner/adguard-sync-mdw/releases/download/v1.0.0/status.png)
+![Status page](https://github.com/MaddogWarner/adguard-sync-mdw/releases/download/v1.1.0/status.png)
 
 **Drift** — differences between primary and followers, expandable per item (here: blocked services and a missing rewrite):
 
-![Drift page](https://github.com/MaddogWarner/adguard-sync-mdw/releases/download/v1.0.0/drift.png)
+![Drift page](https://github.com/MaddogWarner/adguard-sync-mdw/releases/download/v1.1.0/drift.png)
 
 **History** — per-run added/updated/removed counts and status:
 
-![History page](https://github.com/MaddogWarner/adguard-sync-mdw/releases/download/v1.0.0/history.png)
+![History page](https://github.com/MaddogWarner/adguard-sync-mdw/releases/download/v1.1.0/history.png)
 
 The header toggle switches between light and dark themes (it follows your system preference by default):
 
-![Light theme](https://github.com/MaddogWarner/adguard-sync-mdw/releases/download/v1.0.0/theme-light.png)
+![Light theme](https://github.com/MaddogWarner/adguard-sync-mdw/releases/download/v1.1.0/theme-light.png)
 
 ## What It Syncs
 
@@ -65,7 +66,7 @@ cp .env.example .env                 # set AdGuard passwords (and dashboard auth
 docker run -d --name adguard-sync \
   -p 8080:8080 \
   --env-file .env \
-  -v "$PWD/config.yaml:/config/config.yaml:ro" \
+  -v "$PWD/config.yaml:/config/config.yaml" \
   -v "$PWD/data:/data" \
   --restart unless-stopped \
   ghcr.io/maddogwarner/adguard-sync-mdw:latest
@@ -82,7 +83,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./config.yaml:/config/config.yaml:ro
+      - ./config.yaml:/config/config.yaml
       - ./data:/data
     restart: unless-stopped
 ```
@@ -123,6 +124,8 @@ Serve a provided certificate by also mounting it, e.g. `-v "$PWD/certs:/config/c
 
 `CONFIG_PATH` defaults to `/config/config.yaml`. `DATABASE_PATH` can override the SQLite path for local smoke tests or alternate mounts.
 
+The dashboard Settings page can edit the app-managed `config.yaml` and apply normal sync settings live. The config file must be writable by the container user, so do not mount it read-only. TLS listener changes and database path changes are saved but require a container restart because those components are initialised at process startup.
+
 | Field | Purpose |
 |---|---|
 | `interval_minutes` | Sync interval. Must be `5`, `10`, or `15`. |
@@ -139,7 +142,7 @@ Serve a provided certificate by also mounting it, e.g. `-v "$PWD/certs:/config/c
 
 Host fields are `name`, `url`, `username`, `password`, and `verify_ssl`.
 
-Use `${ENV_VAR}` placeholders for secrets:
+Use `${ENV_VAR}` placeholders for secrets. The Settings page does not render password fields; set and maintain passwords in `.env`.
 
 ```yaml
 password: ${ADGUARD_PRIMARY_PASSWORD}
@@ -153,7 +156,7 @@ password: ${ADGUARD_PRIMARY_PASSWORD}
 - `GET /api/drift`
 - `POST /api/sync`
 
-Dashboard pages are `/`, `/drift`, and `/history`.
+Dashboard pages are `/`, `/drift`, `/history`, and `/settings`.
 
 ## Security Notes
 

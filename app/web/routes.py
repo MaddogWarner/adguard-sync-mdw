@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 import secrets
-from collections.abc import Awaitable, Callable
 from typing import Annotated, Any
+from urllib.parse import parse_qs
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse
@@ -11,7 +11,9 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
 
 from app import __version__
-from app.config import AppConfig
+from app.config import AppConfig, ConfigError
+from app.config_manager import SCOPE_KEYS, FormValue, raw_config_from_form
+from app.runtime import AppRuntime
 from app.storage import Storage
 
 templates = Jinja2Templates(directory="app/web/templates")
@@ -19,10 +21,11 @@ templates.env.globals["app_version"] = __version__
 security = HTTPBasic(auto_error=False)
 
 
-def auth_dependency(config: AppConfig):
+def auth_dependency(runtime: AppRuntime):
     async def verify(
         credentials: Annotated[HTTPBasicCredentials | None, Depends(security)],
     ) -> None:
+        config = runtime.config
         if not config.dashboard_user and not config.dashboard_password:
             return
         if credentials is None:
@@ -151,14 +154,68 @@ def _sync_message(run_ids: list[int]) -> str:
     return f"Sync completed. Run IDs: {ids}"
 
 
-def create_router(
+def _host_form_model(host: Any) -> dict[str, Any]:
+    return {
+        "name": host.name,
+        "url": host.url,
+        "username": host.username,
+        "verify_ssl": host.verify_ssl,
+    }
+
+
+def _follower_form_models(config: AppConfig) -> list[dict[str, Any]]:
+    return [
+        {
+            "index": index,
+            "name": follower.name,
+            "url": follower.url,
+            "username": follower.username,
+            "verify_ssl": follower.verify_ssl,
+        }
+        for index, follower in enumerate(config.followers)
+    ]
+
+
+def settings_context(
+    runtime: AppRuntime,
     *,
-    config: AppConfig,
-    storage: Storage,
-    trigger_sync: Callable[[], Awaitable[list[int]]],
-) -> APIRouter:
+    message: str | None = None,
+    error: str | None = None,
+    restart_required: bool = False,
+) -> dict[str, Any]:
+    config = runtime.config
+    scope = {key: getattr(config.scope, key) for key in SCOPE_KEYS}
+    return {
+        "dry_run": config.dry_run,
+        "message": message,
+        "error": error,
+        "restart_required": restart_required,
+        "config": config,
+        "primary": _host_form_model(config.primary),
+        "followers": _follower_form_models(config),
+        "scope": scope,
+        "scope_keys": SCOPE_KEYS,
+    }
+
+
+async def _urlencoded_form(request: Request) -> dict[str, FormValue]:
+    body = (await request.body()).decode("utf-8")
+    parsed = parse_qs(body, keep_blank_values=True)
+    result: dict[str, FormValue] = {}
+    list_keys = {
+        "follower_name",
+        "follower_url",
+        "follower_username",
+        "follower_verify_ssl",
+    }
+    for key, values in parsed.items():
+        result[key] = values if key in list_keys else values[-1]
+    return result
+
+
+def create_router(*, runtime: AppRuntime) -> APIRouter:
     router = APIRouter()
-    protected = [Depends(auth_dependency(config))]
+    protected = [Depends(auth_dependency(runtime))]
 
     @router.get("/healthz")
     async def healthz() -> dict[str, str]:
@@ -169,17 +226,61 @@ def create_router(
         return templates.TemplateResponse(
             request,
             "status.html",
-            status_context(config, storage),
+            status_context(runtime.config, runtime.storage),
         )
 
     @router.post("/sync-now", response_class=HTMLResponse, dependencies=protected)
     async def sync_now(request: Request) -> Any:
-        run_ids = await trigger_sync()
+        run_ids = await runtime.scheduler.trigger_now()
         return templates.TemplateResponse(
             request,
             "status_content.html",
-            status_context(config, storage, _sync_message(run_ids)),
+            status_context(runtime.config, runtime.storage, _sync_message(run_ids)),
         )
+
+    @router.get("/settings", response_class=HTMLResponse, dependencies=protected)
+    async def settings_page(request: Request) -> Any:
+        return templates.TemplateResponse(
+            request,
+            "settings.html",
+            settings_context(runtime),
+        )
+
+    @router.post("/settings", response_class=HTMLResponse, dependencies=protected)
+    async def save_settings(request: Request) -> Any:
+        try:
+            raw = raw_config_from_form(
+                await _urlencoded_form(request),
+                runtime.config_manager.load_raw(),
+            )
+            result = runtime.config_manager.save(raw, runtime.config)
+            await runtime.apply_config(result.config)
+            message = "Settings saved and applied."
+            if result.restart_required:
+                message = "Settings saved. Restart the container for TLS or database path changes."
+            return templates.TemplateResponse(
+                request,
+                "settings.html",
+                settings_context(
+                    runtime,
+                    message=message,
+                    restart_required=result.restart_required,
+                ),
+            )
+        except ConfigError as exc:
+            return templates.TemplateResponse(
+                request,
+                "settings.html",
+                settings_context(runtime, error=str(exc)),
+                status_code=400,
+            )
+        except ValueError as exc:
+            return templates.TemplateResponse(
+                request,
+                "settings.html",
+                settings_context(runtime, error=str(exc)),
+                status_code=400,
+            )
 
     @router.get("/drift", response_class=HTMLResponse, dependencies=protected)
     async def drift_page(request: Request) -> Any:
@@ -187,8 +288,8 @@ def create_router(
             request,
             "drift.html",
             {
-                "dry_run": config.dry_run,
-                "drift": format_drift_for_display(storage.current_drift()),
+                "dry_run": runtime.config.dry_run,
+                "drift": format_drift_for_display(runtime.storage.current_drift()),
             },
         )
 
@@ -197,27 +298,27 @@ def create_router(
         return templates.TemplateResponse(
             request,
             "history.html",
-            {"dry_run": config.dry_run, "runs": storage.recent_runs()},
+            {"dry_run": runtime.config.dry_run, "runs": runtime.storage.recent_runs()},
         )
 
     @router.get("/api/status", dependencies=protected)
     async def api_status() -> dict[str, Any]:
         return {
-            "dry_run": config.dry_run,
-            "followers": storage.latest_run_per_follower(),
-            "host_health": configured_host_health(config, storage),
+            "dry_run": runtime.config.dry_run,
+            "followers": runtime.storage.latest_run_per_follower(),
+            "host_health": configured_host_health(runtime.config, runtime.storage),
         }
 
     @router.get("/api/runs", dependencies=protected)
     async def api_runs() -> list[dict[str, Any]]:
-        return storage.recent_runs()
+        return runtime.storage.recent_runs()
 
     @router.get("/api/drift", dependencies=protected)
     async def api_drift() -> list[dict[str, Any]]:
-        return storage.current_drift()
+        return runtime.storage.current_drift()
 
     @router.post("/api/sync", dependencies=protected)
     async def api_sync() -> dict[str, Any]:
-        return {"run_ids": await trigger_sync()}
+        return {"run_ids": await runtime.scheduler.trigger_now()}
 
     return router

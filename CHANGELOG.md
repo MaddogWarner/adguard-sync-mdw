@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.0] - 2026-06-10
+
+### Added
+
+- Dashboard Settings page to edit the app-managed `config.yaml` live — sync interval, dry run, history retention, log level, TLS, hosts, and per-domain scope — without SSH. Each save writes a timestamped backup. TLS listener and database path changes are saved but require a container restart.
+
+### Changed
+
+- Settings page no longer renders password fields; passwords must be set and maintained in the `.env` file as `${ENV_VAR}` references, which are preserved on save.
+- `config.yaml` is now mounted writable in the Docker Compose examples so the dashboard can save validated settings and create timestamped backups.
+- Dashboard footer now shows version `1.1.0` and the updated Settings page attribution text.
+
 ## [1.0.0] - 2026-06-10
 
 ### Added

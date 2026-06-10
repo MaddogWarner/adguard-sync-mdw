@@ -10,6 +10,10 @@
   --banner-fg: #ffffff;
   --accent: #1f6feb;
   --sync-bg: #e8f3ff;
+  --error-bg: #f8d7da;
+  --error-fg: #842029;
+  --warning-bg: #fff3cd;
+  --warning-fg: #664d03;
   --surface: #ffffff;
   --border: #d8dde3;
   --th-bg: #edf1f4;
@@ -33,6 +37,10 @@
     --banner-fg: #ffffff;
     --accent: #4c8dff;
     --sync-bg: #15293f;
+    --error-bg: #3a1a1d;
+    --error-fg: #f1a7ad;
+    --warning-bg: #3d310d;
+    --warning-fg: #f5d36d;
     --surface: #1a212a;
     --border: #2c343d;
     --th-bg: #222b35;
@@ -53,6 +61,10 @@
   --banner-fg: #ffffff;
   --accent: #4c8dff;
   --sync-bg: #15293f;
+  --error-bg: #3a1a1d;
+  --error-fg: #f1a7ad;
+  --warning-bg: #3d310d;
+  --warning-fg: #f5d36d;
   --surface: #1a212a;
   --border: #2c343d;
   --th-bg: #222b35;
@@ -120,6 +132,21 @@ button {
   border-left: 4px solid var(--accent);
   margin: 0 0 1rem;
   padding: .65rem .8rem;
+}
+.error-result,
+.warning-result {
+  margin: 0 0 1rem;
+  padding: .65rem .8rem;
+}
+.error-result {
+  background: var(--error-bg);
+  border-left: 4px solid var(--error-fg);
+  color: var(--error-fg);
+}
+.warning-result {
+  background: var(--warning-bg);
+  border-left: 4px solid var(--warning-fg);
+  color: var(--warning-fg);
 }
 table {
   background: var(--surface);
@@ -201,10 +228,67 @@ pre {
   background: var(--neutral-bg);
   color: var(--neutral-fg);
 }
+.settings-form {
+  display: grid;
+  gap: 1rem;
+  max-width: 72rem;
+}
+.settings-form fieldset {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin: 0;
+  padding: 1rem;
+}
+.settings-form legend {
+  font-weight: 700;
+  padding: 0 .35rem;
+}
+.settings-form label {
+  display: grid;
+  gap: .35rem;
+  margin-bottom: .85rem;
+}
+.settings-form input,
+.settings-form select {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--fg);
+  font: inherit;
+  max-width: 100%;
+  padding: .45rem .5rem;
+}
+.settings-grid {
+  display: grid;
+  gap: .75rem 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+}
+.check-row {
+  align-items: center;
+  display: flex !important;
+  gap: .5rem;
+}
+.check-row input {
+  margin: 0;
+}
+.follower-settings {
+  border-top: 1px solid var(--border);
+  padding-top: .5rem;
+}
+.follower-settings:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+.restart-label {
+  color: var(--neutral-fg);
+  font-size: .85rem;
+  font-weight: 400;
+}
 footer {
   align-items: center;
   border-top: 1px solid var(--border);
   display: flex;
+  flex-wrap: wrap;
   gap: 1rem;
   padding: 1rem 1.5rem;
 }

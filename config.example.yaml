@@ -4,6 +4,10 @@ database_path: /data/adguard-sync.db
 history_retention_days: 14
 log_level: INFO
 
+# This file can be edited from the dashboard Settings page when it is mounted
+# writable at /config/config.yaml. Keep real secret values in .env and reference
+# them here as ${ENV_VAR} placeholders.
+
 # The dashboard serves HTTPS by default. With no cert provided, a self-signed
 # certificate is generated under the data directory (/data/certs). To use your
 # own certificate, mount the PEM files and point cert_file/key_file at them.

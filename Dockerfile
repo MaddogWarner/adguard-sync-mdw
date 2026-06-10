@@ -14,7 +14,7 @@ ENV PATH="/opt/venv/bin:$PATH" \
 WORKDIR /app
 RUN useradd --create-home --system adguard-sync \
   && mkdir -p /config /data \
-  && chown -R adguard-sync:adguard-sync /app /data
+  && chown -R adguard-sync:adguard-sync /app /config /data
 COPY --from=builder /opt/venv /opt/venv
 COPY app ./app
 USER adguard-sync

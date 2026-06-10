@@ -59,3 +59,17 @@ class SyncScheduler:
             self.scheduler.reschedule_job(
                 "adguard-sync", trigger="interval", minutes=interval_minutes
             )
+
+    def configure(
+        self,
+        *,
+        engine: SyncEngine,
+        interval_minutes: int,
+        history_retention_days: int,
+    ) -> None:
+        self.engine = engine
+        self.history_retention_days = history_retention_days
+        self.reschedule(interval_minutes)
+        job = self.scheduler.get_job("adguard-sync")
+        if job:
+            job.modify(func=self.engine.run_once)
