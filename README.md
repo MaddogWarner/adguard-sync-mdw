@@ -14,6 +14,49 @@ The primary is the source of truth. Followers receive add, update, replace, and 
 
 ## Quick Start
 
+Prebuilt multi-arch images (`linux/amd64`, `linux/arm64`) are published to the GitHub Container Registry:
+
+```bash
+docker pull ghcr.io/maddogwarner/adguard-sync-mdw:latest
+```
+
+Prepare your config and run it:
+
+```bash
+cp config.example.yaml config.yaml   # edit hosts and scope
+cp .env.example .env                 # set AdGuard passwords (and dashboard auth)
+
+docker run -d --name adguard-sync \
+  -p 8080:8080 \
+  --env-file .env \
+  -v "$PWD/config.yaml:/config/config.yaml:ro" \
+  -v "$PWD/data:/data" \
+  --restart unless-stopped \
+  ghcr.io/maddogwarner/adguard-sync-mdw:latest
+```
+
+Or with Docker Compose, using the published image instead of a local build:
+
+```yaml
+services:
+  adguard-sync:
+    image: ghcr.io/maddogwarner/adguard-sync-mdw:latest
+    container_name: adguard-sync
+    env_file: .env
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config.yaml:/config/config.yaml:ro
+      - ./data:/data
+    restart: unless-stopped
+```
+
+Pin a specific release (e.g. `:v0.1.0`) instead of `:latest` for reproducible deployments. Available tags are listed on the [releases page](https://github.com/MaddogWarner/adguard-sync-mdw/releases) and the [package page](https://github.com/MaddogWarner/adguard-sync-mdw/pkgs/container/adguard-sync-mdw).
+
+### Build locally instead
+
+To build from source rather than pull the image, the bundled `docker-compose.yml` uses `build: .`:
+
 ```bash
 cp config.example.yaml config.yaml
 cp .env.example .env
