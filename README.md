@@ -15,6 +15,24 @@ It runs as a single lightweight container, polls on a fixed interval, records wh
 - **Scheduled** every 5, 10, or 15 minutes, with automatic history retention.
 - **Multi-arch images** (`linux/amd64`, `linux/arm64`) for x86 servers, Raspberry Pi, and NAS.
 
+## Screenshots
+
+**Status** — host health and the latest sync run per follower:
+
+![Status page](https://github.com/MaddogWarner/adguard-sync-mdw/releases/download/v1.0.0/status.png)
+
+**Drift** — differences between primary and followers, expandable per item (here: blocked services and a missing rewrite):
+
+![Drift page](https://github.com/MaddogWarner/adguard-sync-mdw/releases/download/v1.0.0/drift.png)
+
+**History** — per-run added/updated/removed counts and status:
+
+![History page](https://github.com/MaddogWarner/adguard-sync-mdw/releases/download/v1.0.0/history.png)
+
+The header toggle switches between light and dark themes (it follows your system preference by default):
+
+![Light theme](https://github.com/MaddogWarner/adguard-sync-mdw/releases/download/v1.0.0/theme-light.png)
+
 ## What It Syncs
 
 - Block lists
