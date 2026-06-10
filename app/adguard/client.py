@@ -5,7 +5,13 @@ from typing import Any
 
 import httpx
 
-from app.adguard.models import FilteringStatus, HostSnapshot, Rewrite, UpstreamDnsConfig
+from app.adguard.models import (
+    BlockedServices,
+    FilteringStatus,
+    HostSnapshot,
+    Rewrite,
+    UpstreamDnsConfig,
+)
 from app.config import HostConfig
 
 logger = logging.getLogger(__name__)
@@ -49,6 +55,10 @@ class AdGuardClient:
         response = await self._client.post(path, json=payload or {})
         self._raise_for_status("POST", path, response)
 
+    async def _put(self, path: str, payload: dict[str, Any] | None = None) -> None:
+        response = await self._client.put(path, json=payload or {})
+        self._raise_for_status("PUT", path, response)
+
     def _raise_for_status(self, method: str, path: str, response: httpx.Response) -> None:
         if response.is_success:
             return
@@ -72,18 +82,34 @@ class AdGuardClient:
     async def get_dns_info(self) -> UpstreamDnsConfig:
         return UpstreamDnsConfig.model_validate(await self._get("/control/dns_info"))
 
+    async def get_blocked_services(self) -> BlockedServices:
+        return BlockedServices.model_validate(await self._get("/control/blocked_services/get"))
+
     async def snapshot(self) -> HostSnapshot:
         try:
             status = await self.get_status()
             filtering = await self.get_filtering_status()
             rewrites = await self.get_rewrites()
             upstream = await self.get_dns_info()
-        except (httpx.HTTPError, AdGuardApiError) as exc:
+        except (httpx.HTTPError, AdGuardApiError, ValueError) as exc:
             logger.warning(
                 "adguard_host_unreachable",
                 extra={"host": self.config.name, "error": str(exc)},
             )
-            return HostSnapshot(host=self.config.name, reachable=False)
+            return HostSnapshot(host=self.config.name, reachable=False, error=str(exc))
+
+        # Blocked services uses a newer endpoint that older AdGuard versions lack.
+        # A failure here must not mark the whole host unreachable, so it is isolated.
+        try:
+            blocked_services = await self.get_blocked_services()
+            blocked_services_supported = True
+        except (httpx.HTTPError, AdGuardApiError, ValueError) as exc:
+            logger.info(
+                "blocked_services_unavailable",
+                extra={"host": self.config.name, "error": str(exc)},
+            )
+            blocked_services = BlockedServices()
+            blocked_services_supported = False
 
         return HostSnapshot(
             host=self.config.name,
@@ -92,6 +118,8 @@ class AdGuardClient:
             user_rules=filtering.user_rules,
             rewrites=rewrites,
             upstream=upstream,
+            blocked_services=blocked_services,
+            blocked_services_supported=blocked_services_supported,
             version=status.get("version"),
             reachable=True,
         )
@@ -137,3 +165,9 @@ class AdGuardClient:
 
     async def refresh_filters(self, *, whitelist: bool) -> None:
         await self._post("/control/filtering/refresh", {"whitelist": whitelist})
+
+    async def set_blocked_services(self, services: BlockedServices) -> None:
+        await self._put(
+            "/control/blocked_services/update",
+            {"ids": services.ids, "schedule": services.schedule},
+        )

@@ -1,23 +1,4 @@
 {% extends "base.html" %}
 {% block content %}
-<section>
-  <h2>Status</h2>
-  <button hx-post="/api/sync" hx-target="#sync-result">Sync now</button>
-  <pre id="sync-result"></pre>
-  <table>
-    <thead><tr><th>Follower</th><th>Status</th><th>Finished</th><th>Error</th></tr></thead>
-    <tbody>
-      {% for run in runs %}
-      <tr>
-        <td>{{ run.follower }}</td>
-        <td>{{ run.status }}</td>
-        <td>{{ run.finished_at }}</td>
-        <td>{{ run.error or "" }}</td>
-      </tr>
-      {% else %}
-      <tr><td colspan="4">No sync runs recorded.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</section>
+{% include "status_content.html" %}
 {% endblock %}

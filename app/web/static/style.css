@@ -1,16 +1,78 @@
 :root {
   color-scheme: light dark;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+
+  --bg: #f5f7f8;
+  --fg: #20262d;
+  --header-bg: #18212b;
+  --header-fg: #ffffff;
+  --banner-bg: #8a4b00;
+  --banner-fg: #ffffff;
+  --accent: #1f6feb;
+  --sync-bg: #e8f3ff;
+  --surface: #ffffff;
+  --border: #d8dde3;
+  --th-bg: #edf1f4;
+  --online-bg: #d9f2e3;
+  --online-fg: #145a32;
+  --offline-bg: #f8d7da;
+  --offline-fg: #842029;
+  --neutral-bg: #e2e6ea;
+  --neutral-fg: #343a40;
 }
+
+/* Dark values: applied automatically by system preference unless the user has
+   forced light, and applied explicitly when the user toggles dark. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12171d;
+    --fg: #e6e9ec;
+    --header-bg: #0c1116;
+    --header-fg: #ffffff;
+    --banner-bg: #b06400;
+    --banner-fg: #ffffff;
+    --accent: #4c8dff;
+    --sync-bg: #15293f;
+    --surface: #1a212a;
+    --border: #2c343d;
+    --th-bg: #222b35;
+    --online-bg: #133a23;
+    --online-fg: #7ee2a8;
+    --offline-bg: #3a1a1d;
+    --offline-fg: #f1a7ad;
+    --neutral-bg: #2a2f35;
+    --neutral-fg: #c4cad0;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12171d;
+  --fg: #e6e9ec;
+  --header-bg: #0c1116;
+  --header-fg: #ffffff;
+  --banner-bg: #b06400;
+  --banner-fg: #ffffff;
+  --accent: #4c8dff;
+  --sync-bg: #15293f;
+  --surface: #1a212a;
+  --border: #2c343d;
+  --th-bg: #222b35;
+  --online-bg: #133a23;
+  --online-fg: #7ee2a8;
+  --offline-bg: #3a1a1d;
+  --offline-fg: #f1a7ad;
+  --neutral-bg: #2a2f35;
+  --neutral-fg: #c4cad0;
+}
+
 body {
   margin: 0;
-  background: #f5f7f8;
-  color: #20262d;
+  background: var(--bg);
+  color: var(--fg);
 }
 header {
   align-items: center;
-  background: #18212b;
-  color: #fff;
+  background: var(--header-bg);
+  color: var(--header-fg);
   display: flex;
   justify-content: space-between;
   padding: 1rem 1.5rem;
@@ -18,16 +80,34 @@ header {
 h1, h2 {
   margin: 0;
 }
+h3 {
+  margin: 1.5rem 0 .75rem;
+}
+nav {
+  align-items: center;
+  display: flex;
+  gap: 1rem;
+}
 nav a {
-  color: #fff;
-  margin-left: 1rem;
+  color: var(--header-fg);
+}
+.theme-toggle {
+  background: transparent;
+  border: 1px solid var(--header-fg);
+  border-radius: 999px;
+  color: var(--header-fg);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  margin: 0;
+  padding: .35rem .6rem;
 }
 main {
   padding: 1.5rem;
 }
 .banner {
-  background: #8a4b00;
-  color: #fff;
+  background: var(--banner-bg);
+  color: var(--banner-fg);
   font-weight: 700;
   padding: .75rem 1.5rem;
 }
@@ -35,16 +115,101 @@ button {
   margin: 1rem 0;
   padding: .55rem .8rem;
 }
+.sync-result {
+  background: var(--sync-bg);
+  border-left: 4px solid var(--accent);
+  margin: 0 0 1rem;
+  padding: .65rem .8rem;
+}
 table {
-  background: #fff;
+  background: var(--surface);
   border-collapse: collapse;
   width: 100%;
 }
 th, td {
-  border-bottom: 1px solid #d8dde3;
+  border-bottom: 1px solid var(--border);
   padding: .65rem;
   text-align: left;
 }
 th {
-  background: #edf1f4;
+  background: var(--th-bg);
+}
+.wrap {
+  overflow-wrap: anywhere;
+}
+.drift-table td {
+  vertical-align: top;
+}
+.drift-details summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+.drift-compare {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  margin-top: .75rem;
+  min-width: 36rem;
+}
+.drift-compare section {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: .75rem;
+}
+.drift-compare h3 {
+  font-size: 1rem;
+  margin: 0 0 .5rem;
+}
+.value-list {
+  display: grid;
+  gap: .35rem .75rem;
+  grid-template-columns: max-content minmax(0, 1fr);
+  margin: 0;
+}
+.value-list dt {
+  font-weight: 700;
+}
+.value-list dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.missing-value {
+  font-style: italic;
+  margin: 0;
+}
+pre {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.status-badge {
+  border-radius: 999px;
+  display: inline-block;
+  font-size: .85rem;
+  font-weight: 700;
+  padding: .25rem .55rem;
+}
+.status-online {
+  background: var(--online-bg);
+  color: var(--online-fg);
+}
+.status-offline {
+  background: var(--offline-bg);
+  color: var(--offline-fg);
+}
+.status-not_checked {
+  background: var(--neutral-bg);
+  color: var(--neutral-fg);
+}
+footer {
+  align-items: center;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+}
+footer .version {
+  color: var(--neutral-fg);
+  margin-left: auto;
+  opacity: .8;
 }

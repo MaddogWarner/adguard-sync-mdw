@@ -11,6 +11,7 @@ class Domain(StrEnum):
     USER_RULES = "user_rules"
     REWRITES = "rewrites"
     UPSTREAM_DNS = "upstream_dns"
+    BLOCKED_SERVICES = "blocked_services"
 
 
 class Op(StrEnum):

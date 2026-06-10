@@ -1,8 +1,15 @@
 from __future__ import annotations
 
-from app.adguard.models import Filter, Rewrite, UpstreamDnsConfig
+from app.adguard.models import BlockedServices, Filter, Rewrite, UpstreamDnsConfig
 from app.config import ScopeConfig, ScopeItem
-from app.sync.differ import diff_filters, diff_host, diff_rewrites, diff_upstream, diff_user_rules
+from app.sync.differ import (
+    diff_blocked_services,
+    diff_filters,
+    diff_host,
+    diff_rewrites,
+    diff_upstream,
+    diff_user_rules,
+)
 from app.sync.result import Domain, Op
 from tests.conftest import snapshot
 
@@ -102,6 +109,33 @@ def test_diff_upstream_replace_with_normalised_lists():
     assert diff_upstream(primary, different).actions[0].op == Op.REPLACE
 
 
+def test_diff_blocked_services_replace_when_ids_or_schedule_differ():
+    primary = BlockedServices(ids=["facebook", "tiktok"], schedule={"time_zone": "Local"})
+    changed_ids = BlockedServices(ids=["facebook"], schedule={"time_zone": "Local"})
+    changed_schedule = BlockedServices(ids=["facebook", "tiktok"], schedule=None)
+
+    ids_result = diff_blocked_services(primary, changed_ids)
+    schedule_result = diff_blocked_services(primary, changed_schedule)
+
+    assert ids_result.actions[0].op == Op.REPLACE
+    assert ids_result.actions[0].detail == {
+        "ids": ["facebook", "tiktok"],
+        "schedule": {"time_zone": "Local"},
+    }
+    assert ids_result.drift[0].target == "blocked_services"
+    assert schedule_result.actions[0].op == Op.REPLACE
+
+
+def test_diff_blocked_services_noop_ignores_id_order():
+    primary = BlockedServices(ids=["facebook", "tiktok"], schedule={"time_zone": "Local"})
+    follower = BlockedServices(ids=["tiktok", "facebook"], schedule={"time_zone": "Local"})
+
+    result = diff_blocked_services(primary, follower)
+
+    assert result.actions == []
+    assert result.drift == []
+
+
 def test_diff_host_honours_scope():
     primary = snapshot(blocklists=[Filter(url="https://a.test/list.txt", name="A")])
     follower = snapshot()
@@ -111,6 +145,7 @@ def test_diff_host_honours_scope():
         user_rules=ScopeItem(enabled=False, prune=False),
         rewrites=ScopeItem(enabled=False, prune=True),
         upstream_dns=ScopeItem(enabled=False, prune=False),
+        blocked_services=ScopeItem(enabled=False, prune=False),
     )
 
     assert diff_host(primary, follower, scope) == []

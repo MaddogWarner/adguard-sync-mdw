@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 
 from app.adguard.client import AdGuardClient
-from app.adguard.models import HostSnapshot
+from app.adguard.models import BlockedServices, HostSnapshot, UpstreamDnsConfig
 from app.config import AppConfig
 from app.storage import Storage, utc_now
 from app.sync.differ import diff_host
@@ -25,6 +25,7 @@ class SyncEngine:
 
     async def run_once(self) -> list[int]:
         primary = await self.clients[self.config.primary.name].snapshot()
+        self._record_host_health(primary, role="primary", url=self.config.primary.url)
         run_ids: list[int] = []
         if not primary.reachable:
             for follower in self.config.followers:
@@ -54,6 +55,14 @@ class SyncEngine:
     async def sync_follower(self, primary_snapshot: HostSnapshot, follower_name: str) -> int:
         started_at = utc_now()
         follower_snapshot = await self.clients[follower_name].snapshot()
+        follower_config = next(
+            follower for follower in self.config.followers if follower.name == follower_name
+        )
+        self._record_host_health(
+            follower_snapshot,
+            role="follower",
+            url=follower_config.url,
+        )
         if not follower_snapshot.reachable:
             return self.storage.record_run(
                 follower=follower_name,
@@ -107,6 +116,15 @@ class SyncEngine:
             "removed": sum(1 for action in actions if action.op == Op.REMOVE),
         }
 
+    def _record_host_health(self, snapshot: HostSnapshot, *, role: str, url: str) -> None:
+        self.storage.record_host_health(
+            name=snapshot.host,
+            role=role,
+            url=url,
+            online=snapshot.reachable,
+            error=snapshot.error,
+        )
+
     async def _apply_actions(self, follower_name: str, actions: list[ChangeAction]) -> None:
         client = self.clients[follower_name]
         refresh_blocklists = False
@@ -139,9 +157,9 @@ class SyncEngine:
                 elif action.op == Op.REMOVE:
                     await client.delete_rewrite(action.detail["domain"], action.detail["answer"])
             elif action.domain == Domain.UPSTREAM_DNS:
-                from app.adguard.models import UpstreamDnsConfig
-
                 await client.set_dns_config(UpstreamDnsConfig.model_validate(action.detail))
+            elif action.domain == Domain.BLOCKED_SERVICES:
+                await client.set_blocked_services(BlockedServices.model_validate(action.detail))
 
         if refresh_blocklists:
             await client.refresh_filters(whitelist=False)

@@ -47,7 +47,7 @@ async def close_engine(engine: SyncEngine) -> None:
         await client.aclose()
 
 
-def mock_snapshot(router, base_url: str, *, filters=None):
+def mock_snapshot(router, base_url: str, *, filters=None, blocked_ids=None):
     filters = filters or []
     router.get(f"{base_url}/control/status").mock(
         return_value=httpx.Response(200, json={"version": "v1"})
@@ -60,6 +60,9 @@ def mock_snapshot(router, base_url: str, *, filters=None):
     )
     router.get(f"{base_url}/control/rewrite/list").mock(return_value=httpx.Response(200, json=[]))
     router.get(f"{base_url}/control/dns_info").mock(return_value=httpx.Response(200, json={}))
+    router.get(f"{base_url}/control/blocked_services/get").mock(
+        return_value=httpx.Response(200, json={"ids": blocked_ids or [], "schedule": None})
+    )
 
 
 @pytest.mark.asyncio
@@ -73,12 +76,16 @@ async def test_engine_applies_representative_diff(tmp_path):
             router,
             "http://primary.local",
             filters=[{"url": "https://a.test/list.txt", "name": "A", "enabled": True}],
+            blocked_ids=["facebook"],
         )
         mock_snapshot(router, "http://follower-a.local")
         add = router.post("http://follower-a.local/control/filtering/add_url").mock(
             return_value=httpx.Response(200)
         )
         refresh = router.post("http://follower-a.local/control/filtering/refresh").mock(
+            return_value=httpx.Response(200)
+        )
+        blocked = router.put("http://follower-a.local/control/blocked_services/update").mock(
             return_value=httpx.Response(200)
         )
 
@@ -89,6 +96,10 @@ async def test_engine_applies_representative_diff(tmp_path):
     assert latest["status"] == "drift_corrected"
     assert add.called
     assert refresh.called
+    assert blocked.called
+    health = {row["name"]: row for row in storage.host_health()}
+    assert health["primary"]["status"] == "online"
+    assert health["follower-a"]["status"] == "online"
 
 
 @pytest.mark.asyncio
@@ -163,3 +174,27 @@ async def test_unreachable_follower_does_not_stop_others(tmp_path):
 
     statuses = {row["follower"]: row["status"] for row in storage.latest_run_per_follower()}
     assert statuses == {"follower-a": "failed", "follower-b": "in_sync"}
+    health = {row["name"]: row for row in storage.host_health()}
+    assert health["follower-a"]["status"] == "offline"
+    assert health["follower-a"]["error"] == "down"
+    assert health["follower-b"]["status"] == "online"
+
+
+@pytest.mark.asyncio
+async def test_primary_auth_failure_records_offline_health(tmp_path):
+    config = make_config(tmp_path)
+    storage = Storage(config.database_path)
+    storage.init_db()
+    engine = make_engine(config, storage)
+    with respx.mock as router:
+        router.get("http://primary.local/control/status").mock(
+            return_value=httpx.Response(401, text="Unauthorised")
+        )
+
+        await engine.run_once()
+    await close_engine(engine)
+
+    health = storage.host_health()
+    assert health[0]["name"] == "primary"
+    assert health[0]["status"] == "offline"
+    assert "HTTP 401" in health[0]["error"]

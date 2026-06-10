@@ -2,18 +2,35 @@
 {% block content %}
 <section>
   <h2>Current Drift</h2>
-  <table>
-    <thead><tr><th>Follower</th><th>Domain</th><th>Kind</th><th>Target</th></tr></thead>
+  <table class="drift-table">
+    <thead><tr><th>Follower</th><th>Domain</th><th>Kind</th><th>Target</th><th>Details</th></tr></thead>
     <tbody>
       {% for item in drift %}
       <tr>
         <td>{{ item.follower }}</td>
         <td>{{ item.domain }}</td>
         <td>{{ item.kind }}</td>
-        <td>{{ item.target }}</td>
+        <td class="wrap">{{ item.target }}</td>
+        <td>
+          <details class="drift-details">
+            <summary>Show difference</summary>
+            <div class="drift-compare">
+              <section>
+                <h3>Primary</h3>
+                {% set value = item.primary_display %}
+                {% include "value.html" %}
+              </section>
+              <section>
+                <h3>Follower</h3>
+                {% set value = item.follower_display %}
+                {% include "value.html" %}
+              </section>
+            </div>
+          </details>
+        </td>
       </tr>
       {% else %}
-      <tr><td colspan="4">No drift recorded.</td></tr>
+      <tr><td colspan="5">No drift recorded.</td></tr>
       {% endfor %}
     </tbody>
   </table>

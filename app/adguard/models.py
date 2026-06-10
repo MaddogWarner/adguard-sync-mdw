@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class Filter(BaseModel):
@@ -27,6 +29,23 @@ class UpstreamDnsConfig(BaseModel):
     fallback_dns: list[str] = Field(default_factory=list)
     upstream_mode: str = ""
 
+    @field_validator("upstream_dns", "bootstrap_dns", "fallback_dns", mode="before")
+    @classmethod
+    def empty_list_when_null(cls, value: Any) -> Any:
+        return [] if value is None else value
+
+
+class BlockedServices(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    ids: list[str] = Field(default_factory=list)
+    schedule: dict[str, Any] | None = None
+
+    @field_validator("ids", mode="before")
+    @classmethod
+    def empty_list_when_null(cls, value: Any) -> Any:
+        return [] if value is None else value
+
 
 class FilteringStatus(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -35,6 +54,11 @@ class FilteringStatus(BaseModel):
     whitelist_filters: list[Filter] = Field(default_factory=list)
     user_rules: list[str] = Field(default_factory=list)
     interval: int | None = None
+
+    @field_validator("filters", "whitelist_filters", "user_rules", mode="before")
+    @classmethod
+    def empty_list_when_null(cls, value: Any) -> Any:
+        return [] if value is None else value
 
 
 class HostSnapshot(BaseModel):
@@ -46,5 +70,8 @@ class HostSnapshot(BaseModel):
     user_rules: list[str] = Field(default_factory=list)
     rewrites: list[Rewrite] = Field(default_factory=list)
     upstream: UpstreamDnsConfig = Field(default_factory=UpstreamDnsConfig)
+    blocked_services: BlockedServices = Field(default_factory=BlockedServices)
+    blocked_services_supported: bool = True
     version: str | None = None
     reachable: bool = True
+    error: str | None = None

@@ -1,0 +1,12 @@
+{% if value.missing %}
+<p class="missing-value">{{ value.label }}</p>
+{% elif value.rows %}
+<dl class="value-list">
+  {% for row in value.rows %}
+  <dt>{{ row.key }}</dt>
+  <dd>{{ row.value }}</dd>
+  {% endfor %}
+</dl>
+{% else %}
+<pre>{{ value.text }}</pre>
+{% endif %}

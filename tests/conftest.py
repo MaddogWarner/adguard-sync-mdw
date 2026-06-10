@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-from app.adguard.models import Filter, HostSnapshot, Rewrite, UpstreamDnsConfig
+from app.adguard.models import (
+    BlockedServices,
+    Filter,
+    HostSnapshot,
+    Rewrite,
+    UpstreamDnsConfig,
+)
 from app.config import HostConfig
 
 
@@ -25,6 +31,8 @@ def snapshot(
     user_rules: list[str] | None = None,
     rewrites: list[Rewrite] | None = None,
     upstream: UpstreamDnsConfig | None = None,
+    blocked_services: BlockedServices | None = None,
+    blocked_services_supported: bool = True,
     reachable: bool = True,
 ) -> HostSnapshot:
     return HostSnapshot(
@@ -34,5 +42,7 @@ def snapshot(
         user_rules=user_rules or [],
         rewrites=rewrites or [],
         upstream=upstream or UpstreamDnsConfig(),
+        blocked_services=blocked_services or BlockedServices(),
+        blocked_services_supported=blocked_services_supported,
         reachable=reachable,
     )

@@ -1,0 +1,45 @@
+<section id="status-content">
+  <h2>Status</h2>
+  <button hx-post="/sync-now" hx-target="#status-content" hx-swap="outerHTML">Sync now</button>
+  {% if sync_message %}
+  <p class="sync-result">{{ sync_message }}</p>
+  {% endif %}
+
+  <h3>Configured DNS Hosts</h3>
+  <table>
+    <thead>
+      <tr><th>Name</th><th>Role</th><th>URL</th><th>Health</th><th>Last checked</th><th>Error</th></tr>
+    </thead>
+    <tbody>
+      {% for host in host_health %}
+      <tr>
+        <td>{{ host.name }}</td>
+        <td>{{ host.role }}</td>
+        <td class="wrap">{{ host.url }}</td>
+        <td><span class="status-badge status-{{ host.status }}">{{ host.status }}</span></td>
+        <td>{{ host.last_checked }}</td>
+        <td>{{ host.error or "" }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6">No hosts configured.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h3>Sync Runs</h3>
+  <table>
+    <thead><tr><th>Follower</th><th>Status</th><th>Finished</th><th>Error</th></tr></thead>
+    <tbody>
+      {% for run in runs %}
+      <tr>
+        <td>{{ run.follower }}</td>
+        <td>{{ run.status }}</td>
+        <td>{{ run.finished_at }}</td>
+        <td>{{ run.error or "" }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4">No sync runs recorded.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>

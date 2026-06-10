@@ -4,6 +4,15 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>AdGuard Sync</title>
+    <script>
+      // Apply the saved theme before first paint to avoid a flash.
+      (function () {
+        var saved = localStorage.getItem("theme");
+        if (saved === "light" || saved === "dark") {
+          document.documentElement.dataset.theme = saved;
+        }
+      })();
+    </script>
     <link rel="stylesheet" href="/static/style.css">
     <script src="/static/htmx.min.js"></script>
   </head>
@@ -14,9 +23,40 @@
         <a href="/">Status</a>
         <a href="/drift">Drift</a>
         <a href="/history">History</a>
+        <button type="button" id="theme-toggle" class="theme-toggle"
+                aria-label="Toggle light or dark mode">🌙</button>
       </nav>
     </header>
     {% if dry_run %}<div class="banner">DRY RUN</div>{% endif %}
     <main>{% block content %}{% endblock %}</main>
+    <footer>
+      <a href="https://github.com/MaddogWarner/adguard-sync-mdw">MaddogWarner/adguard-sync-mdw</a>
+      <a href="https://maddogwarner.com">maddogwarner.com</a>
+      <span class="version">v{{ app_version }}</span>
+    </footer>
+    <script>
+      (function () {
+        var toggle = document.getElementById("theme-toggle");
+        if (!toggle) return;
+        var media = window.matchMedia("(prefers-color-scheme: dark)");
+        function effectiveTheme() {
+          var explicit = document.documentElement.dataset.theme;
+          if (explicit === "light" || explicit === "dark") return explicit;
+          return media.matches ? "dark" : "light";
+        }
+        function render() {
+          // Show the icon for the mode the button will switch TO.
+          toggle.textContent = effectiveTheme() === "dark" ? "☀️" : "🌙";
+        }
+        toggle.addEventListener("click", function () {
+          var next = effectiveTheme() === "dark" ? "light" : "dark";
+          document.documentElement.dataset.theme = next;
+          localStorage.setItem("theme", next);
+          render();
+        });
+        media.addEventListener("change", render);
+        render();
+      })();
+    </script>
   </body>
 </html>

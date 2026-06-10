@@ -2,6 +2,19 @@
 
 AdGuard Sync mirrors configuration from one primary AdGuard Home server to one or more followers. It uses the AdGuard Home HTTP control API only and does not edit `AdGuardHome.yaml`.
 
+It runs as a single lightweight container, polls on a fixed interval, records what changed and where followers have drifted, and presents it all on a small dashboard.
+
+## Features
+
+- **One-way full mirror**, primary → followers: add missing items, update changed ones, and prune follower-only extras (per-domain `prune` toggle).
+- **Six sync domains**: block lists, allowlists, custom user rules, DNS rewrites, upstream DNS, and blocked services.
+- **Drift detection**: every run records the difference between primary and follower *before* applying, viewable on the Drift page.
+- **Dashboard** (FastAPI + HTMX) with Status, Drift, and History pages, a manual **Sync now** trigger, host health, light/dark theme toggle, and a JSON API.
+- **HTTPS by default** with a generated self-signed certificate, or bring your own (see [TLS](#tls)).
+- **Safe by default**: global `dry_run` records intended changes without writing; secrets come from the environment, never the YAML.
+- **Scheduled** every 5, 10, or 15 minutes, with automatic history retention.
+- **Multi-arch images** (`linux/amd64`, `linux/arm64`) for x86 servers, Raspberry Pi, and NAS.
+
 ## What It Syncs
 
 - Block lists
@@ -9,6 +22,11 @@ AdGuard Sync mirrors configuration from one primary AdGuard Home server to one o
 - Custom user rules
 - DNS rewrites
 - Managed upstream DNS fields: `upstream_dns`, `bootstrap_dns`, `fallback_dns`, `upstream_mode`
+- Blocked services (the blocked-service IDs and their schedule)
+
+Blocked-services sync uses AdGuard Home's `blocked_services/get` and `blocked_services/update` endpoints (AdGuard Home v0.107.x or newer). On older hosts that lack these endpoints the domain is skipped automatically without affecting the other domains.
+
+The dashboard supports light and dark themes via the toggle in the header; the choice is remembered per browser and otherwise follows your system preference.
 
 The primary is the source of truth. Followers receive add, update, replace, and prune actions based on the configured scope.
 
@@ -63,7 +81,25 @@ cp .env.example .env
 docker compose up --build
 ```
 
-The dashboard listens on port `8080`. Keep it LAN-only by default and set `DASHBOARD_USER` and `DASHBOARD_PASSWORD` when exposing it beyond a trusted host.
+The dashboard listens on `https://<host>:8080` (HTTPS by default — see [TLS](#tls)). Keep it LAN-only by default and set `DASHBOARD_USER` and `DASHBOARD_PASSWORD` when exposing it beyond a trusted host.
+
+## TLS
+
+The dashboard serves HTTPS by default.
+
+- **Self-signed (default):** with no certificate configured, a self-signed certificate is generated on first start under the data directory (`/data/certs/`) and reused thereafter. Browsers will warn that it is not trusted — expected for a self-signed cert; accept the exception or supply your own.
+- **Provide your own certificate:** mount a PEM cert and key into the container and point `tls.cert_file` / `tls.key_file` (or the `TLS_CERT_FILE` / `TLS_KEY_FILE` env vars) at them.
+
+  ```yaml
+  tls:
+    enabled: true
+    cert_file: /config/certs/server.crt
+    key_file: /config/certs/server.key
+  ```
+
+- **Disable TLS:** set `tls.enabled: false` (or `TLS_ENABLED=false`) only when TLS is terminated by a reverse proxy in front of the container.
+
+Serve a provided certificate by also mounting it, e.g. `-v "$PWD/certs:/config/certs:ro"`.
 
 ## Configuration
 
@@ -74,7 +110,10 @@ The dashboard listens on port `8080`. Keep it LAN-only by default and set `DASHB
 | `interval_minutes` | Sync interval. Must be `5`, `10`, or `15`. |
 | `dry_run` | Records drift and intended changes without making write calls. |
 | `database_path` | SQLite path. Defaults to `/data/adguard-sync.db`. |
+| `history_retention_days` | Number of days to retain sync history before purging related run, change, and drift rows. Defaults to `14`. |
 | `log_level` | JSON stdout log level. |
+| `tls.enabled` | Serve the dashboard over HTTPS. Defaults to `true`. |
+| `tls.cert_file` / `tls.key_file` | Optional PEM cert and key. When unset, a self-signed pair is generated. Must be set together. |
 | `primary` | Source AdGuard Home host. |
 | `followers` | One or more destination hosts. |
 | `scope.*.enabled` | Enables a sync domain. |
@@ -110,7 +149,16 @@ Dashboard pages are `/`, `/drift`, and `/history`.
 
 `dry_run: true` is the safest first deployment mode. Review `/drift` and `/history`, then disable dry run after confirming the proposed changes.
 
-Open confirmation items for live smoke testing:
+History retention runs at startup and daily. Rows older than `history_retention_days` are deleted from SQLite, including related change and drift records.
 
-- Confirm `upstream_mode` field and value semantics against the target AdGuard Home version.
-- Current behaviour refreshes filters only after blocklist or allowlist changes.
+Filters are refreshed on the follower only after blocklist or allowlist changes are applied.
+
+## Contributors
+
+- **[David (MaddogWarner)](https://github.com/MaddogWarner)** — project owner: vision, requirements, review, and live testing.
+- **Claude (Anthropic)** — architecture, the v1.0.0 feature work (blocked-services sync, theme toggle, HTTPS), reviews, and deployment.
+- **Codex (OpenAI)** — initial implementation of the build spec.
+
+## License
+
+Released under the [MIT License](LICENSE).

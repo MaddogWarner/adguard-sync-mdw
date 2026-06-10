@@ -13,6 +13,7 @@ from app.logging_setup import setup_logging
 from app.scheduler import SyncScheduler
 from app.storage import Storage
 from app.sync.engine import SyncEngine
+from app.tls import resolve_tls
 from app.web.routes import create_router
 
 
@@ -21,12 +22,18 @@ def build_app() -> FastAPI:
     setup_logging(config.log_level)
     storage = Storage(config.database_path)
     storage.init_db()
+    storage.purge_history_older_than(config.history_retention_days)
     clients = {
         config.primary.name: AdGuardClient(config.primary),
         **{follower.name: AdGuardClient(follower) for follower in config.followers},
     }
     engine = SyncEngine(config, storage, clients)
-    scheduler = SyncScheduler(engine, config.interval_minutes)
+    scheduler = SyncScheduler(
+        engine,
+        config.interval_minutes,
+        storage,
+        config.history_retention_days,
+    )
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -52,5 +59,11 @@ def build_app() -> FastAPI:
 app = build_app()
 
 
+def main() -> None:
+    tls = resolve_tls(app.state.config)
+    ssl_kwargs = {"ssl_certfile": tls.cert_file, "ssl_keyfile": tls.key_file} if tls else {}
+    uvicorn.run(app, host="0.0.0.0", port=8080, **ssl_kwargs)
+
+
 if __name__ == "__main__":
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8080)
+    main()

@@ -4,7 +4,7 @@ import json
 import sqlite3
 from collections.abc import Iterable
 from dataclasses import asdict
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -61,8 +61,59 @@ class Storage:
                     primary_value TEXT,
                     follower_value TEXT
                 );
+                CREATE TABLE IF NOT EXISTS host_health (
+                    name TEXT PRIMARY KEY,
+                    role TEXT NOT NULL,
+                    url TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    last_checked TEXT NOT NULL,
+                    error TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_sync_runs_finished_at
+                  ON sync_runs(finished_at);
+                CREATE INDEX IF NOT EXISTS idx_sync_runs_follower_id
+                  ON sync_runs(follower, id);
+                CREATE INDEX IF NOT EXISTS idx_drift_follower_run_id
+                  ON drift(follower, run_id);
                 """
             )
+
+    def record_host_health(
+        self,
+        *,
+        name: str,
+        role: str,
+        url: str,
+        online: bool,
+        last_checked: str | None = None,
+        error: str | None = None,
+    ) -> None:
+        status = "online" if online else "offline"
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO host_health (name, role, url, status, last_checked, error)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(name) DO UPDATE SET
+                    role = excluded.role,
+                    url = excluded.url,
+                    status = excluded.status,
+                    last_checked = excluded.last_checked,
+                    error = excluded.error
+                """,
+                (name, role, url, status, last_checked or utc_now(), error),
+            )
+
+    def host_health(self) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM host_health
+                ORDER BY CASE role WHEN 'primary' THEN 0 ELSE 1 END, name
+                """
+            ).fetchall()
+            return [dict(row) for row in rows]
 
     def record_run(
         self,
@@ -198,6 +249,28 @@ class Storage:
                 """
             ).fetchall()
             return [dict(row) for row in rows]
+
+    def purge_history_older_than(
+        self,
+        retention_days: int,
+        *,
+        now: datetime | None = None,
+    ) -> int:
+        if retention_days < 1:
+            raise ValueError("retention_days must be at least 1")
+        now = now or datetime.now(UTC)
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=UTC)
+        cutoff = (now.astimezone(UTC) - timedelta(days=retention_days)).isoformat()
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "DELETE FROM sync_runs WHERE COALESCE(finished_at, started_at) < ?",
+                (cutoff,),
+            )
+            deleted = cursor.rowcount
+        with self._connect() as conn:
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        return deleted
 
 
 def serialise_dataclass(value: object) -> dict[str, Any]:

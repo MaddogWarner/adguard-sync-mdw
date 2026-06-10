@@ -2,9 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.0] - 2026-06-10
+
+### Added
+
+- Blocked services sync (a sixth sync domain): mirrors the primary's blocked-service IDs and their schedule to followers, with drift detection on the Drift page.
+- Light/dark theme toggle in the dashboard header. The choice is remembered per browser and otherwise follows the system preference.
+- HTTPS for the dashboard, enabled by default. A self-signed certificate is generated under the data directory when none is provided; a user-supplied PEM cert/key can be set via `tls.cert_file`/`tls.key_file` (or `TLS_CERT_FILE`/`TLS_KEY_FILE`). TLS can be disabled with `tls.enabled: false` when terminating TLS at a reverse proxy.
+- App version shown in the dashboard footer.
+
+### Changed
+
+- Hosts that do not expose the `blocked_services/get` endpoint (older AdGuard Home versions) are detected gracefully: the blocked-services domain is skipped for them without marking the host unreachable or affecting other domains.
+
 ## [0.1.0] - 2026-06-10
 
 ### Added
 
 - Initial AdGuard Sync implementation scaffold.
 - Config validation, AdGuard API client, pure diff engine, SQLite persistence, sync engine, scheduler, FastAPI dashboard/API, container files, CI, and release workflow.
+- Tolerant AdGuard API parsing for `null` list fields returned by some versions.
+- Expandable Drift page details comparing primary and follower values.
+- Automatic 14-day sync history retention with related change/drift purge.
+- Status page host health for configured primary/follower AdGuard hosts, plus project footer links.
+- Dashboard Sync now button now renders a readable result and refreshed status tables instead of raw API JSON.

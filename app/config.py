@@ -34,6 +34,12 @@ class HostConfig(BaseModel):
         return value.rstrip("/")
 
 
+class TlsConfig(BaseModel):
+    enabled: bool = True
+    cert_file: str | None = None
+    key_file: str | None = None
+
+
 class ScopeItem(BaseModel):
     enabled: bool = True
     prune: bool = True
@@ -45,17 +51,20 @@ class ScopeConfig(BaseModel):
     user_rules: ScopeItem = Field(default_factory=lambda: ScopeItem(prune=False))
     rewrites: ScopeItem = Field(default_factory=ScopeItem)
     upstream_dns: ScopeItem = Field(default_factory=lambda: ScopeItem(prune=False))
+    blocked_services: ScopeItem = Field(default_factory=lambda: ScopeItem(prune=False))
 
 
 class AppConfig(BaseModel):
     interval_minutes: int
     dry_run: bool = True
+    tls: TlsConfig = Field(default_factory=TlsConfig)
     scope: ScopeConfig = Field(default_factory=ScopeConfig)
     primary: HostConfig
     followers: list[HostConfig]
     dashboard_user: str | None = None
     dashboard_password: SecretStr | None = None
     database_path: str = "/data/adguard-sync.db"
+    history_retention_days: int = 14
     log_level: str = "INFO"
 
     @field_validator("interval_minutes")
@@ -63,6 +72,13 @@ class AppConfig(BaseModel):
     def validate_interval(cls, value: int) -> int:
         if value not in {5, 10, 15}:
             raise ValueError("interval_minutes must be one of 5, 10, or 15")
+        return value
+
+    @field_validator("history_retention_days")
+    @classmethod
+    def validate_history_retention(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("history_retention_days must be at least 1")
         return value
 
     @model_validator(mode="after")
@@ -83,6 +99,9 @@ class AppConfig(BaseModel):
 
         if bool(self.dashboard_user) ^ bool(self.dashboard_password):
             raise ValueError("dashboard_user and dashboard_password must be set together")
+
+        if bool(self.tls.cert_file) ^ bool(self.tls.key_file):
+            raise ValueError("tls.cert_file and tls.key_file must be set together")
         return self
 
 
@@ -103,6 +122,22 @@ def _interpolate(value: Any) -> Any:
     return value
 
 
+_TRUTHY = {"1", "true", "yes", "on"}
+
+
+def _apply_tls_env(data: dict[str, Any]) -> None:
+    tls = data.get("tls")
+    tls = dict(tls) if isinstance(tls, dict) else {}
+    if (enabled := os.environ.get("TLS_ENABLED")) is not None:
+        tls["enabled"] = enabled.strip().lower() in _TRUTHY
+    if cert_file := os.environ.get("TLS_CERT_FILE"):
+        tls["cert_file"] = cert_file
+    if key_file := os.environ.get("TLS_KEY_FILE"):
+        tls["key_file"] = key_file
+    if tls:
+        data["tls"] = tls
+
+
 def load_config(path: str | Path | None = None) -> AppConfig:
     config_path = Path(path or os.environ.get(CONFIG_PATH_ENV, DEFAULT_CONFIG_PATH))
     try:
@@ -116,6 +151,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
             data.setdefault("dashboard_password", dashboard_password)
         if database_path := os.environ.get("DATABASE_PATH"):
             data["database_path"] = database_path
+        _apply_tls_env(data)
         return AppConfig.model_validate(data)
     except ConfigError:
         raise

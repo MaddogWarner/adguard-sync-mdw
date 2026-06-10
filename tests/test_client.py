@@ -5,6 +5,7 @@ import pytest
 import respx
 
 from app.adguard.client import AdGuardApiError, AdGuardClient
+from app.adguard.models import BlockedServices
 
 
 @pytest.mark.asyncio
@@ -38,6 +39,12 @@ async def test_snapshot_assembles_host_snapshot(host_config):
                 },
             )
         )
+        router.get("/control/blocked_services/get").mock(
+            return_value=httpx.Response(
+                200,
+                json={"ids": ["facebook"], "schedule": {"time_zone": "Local"}},
+            )
+        )
 
         client = AdGuardClient(host_config)
         result = await client.snapshot()
@@ -48,6 +55,8 @@ async def test_snapshot_assembles_host_snapshot(host_config):
     assert result.blocklists[0].url == "https://block.example/list.txt"
     assert result.allowlists[0].url == "https://allow.example/list.txt"
     assert result.rewrites[0].domain == "a.test"
+    assert result.blocked_services.ids == ["facebook"]
+    assert result.blocked_services_supported is True
 
 
 @pytest.mark.asyncio
@@ -59,6 +68,9 @@ async def test_write_methods_use_expected_paths_and_bodies(host_config):
         rules = router.post("/control/filtering/set_rules").mock(return_value=httpx.Response(200))
         dns = router.post("/control/dns_config").mock(return_value=httpx.Response(200))
         refresh = router.post("/control/filtering/refresh").mock(return_value=httpx.Response(200))
+        blocked = router.put("/control/blocked_services/update").mock(
+            return_value=httpx.Response(200)
+        )
 
         client = AdGuardClient(host_config)
         await client.add_filter("https://example/list.txt", "Example", whitelist=False)
@@ -69,6 +81,9 @@ async def test_write_methods_use_expected_paths_and_bodies(host_config):
             client_module_upstream(["1.1.1.1"], ["9.9.9.9"], [], "parallel")
         )
         await client.refresh_filters(whitelist=True)
+        await client.set_blocked_services(
+            BlockedServices(ids=["facebook"], schedule={"time_zone": "Local"})
+        )
         await client.aclose()
 
     assert add.calls.last.request.content == (
@@ -84,6 +99,9 @@ async def test_write_methods_use_expected_paths_and_bodies(host_config):
         b'"fallback_dns":[],"upstream_mode":"parallel"}'
     )
     assert refresh.calls.last.request.content == b'{"whitelist":true}'
+    assert blocked.calls.last.request.content == (
+        b'{"ids":["facebook"],"schedule":{"time_zone":"Local"}}'
+    )
 
 
 def client_module_upstream(upstream_dns, bootstrap_dns, fallback_dns, upstream_mode):
@@ -98,6 +116,24 @@ def client_module_upstream(upstream_dns, bootstrap_dns, fallback_dns, upstream_m
 
 
 @pytest.mark.asyncio
+async def test_filtering_status_accepts_null_lists(host_config):
+    with respx.mock(base_url="http://adguard.local") as router:
+        router.get("/control/filtering/status").mock(
+            return_value=httpx.Response(
+                200,
+                json={"filters": None, "whitelist_filters": None, "user_rules": None},
+            )
+        )
+        client = AdGuardClient(host_config)
+        result = await client.get_filtering_status()
+        await client.aclose()
+
+    assert result.filters == []
+    assert result.whitelist_filters == []
+    assert result.user_rules == []
+
+
+@pytest.mark.asyncio
 async def test_snapshot_unreachable_returns_unreachable(host_config):
     with respx.mock(base_url="http://adguard.local") as router:
         router.get("/control/status").mock(side_effect=httpx.ConnectError("no route"))
@@ -106,6 +142,30 @@ async def test_snapshot_unreachable_returns_unreachable(host_config):
         await client.aclose()
 
     assert result.reachable is False
+
+
+@pytest.mark.asyncio
+async def test_snapshot_tolerates_missing_blocked_services_endpoint(host_config):
+    with respx.mock(base_url="http://adguard.local") as router:
+        router.get("/control/status").mock(return_value=httpx.Response(200, json={"version": "v1"}))
+        router.get("/control/filtering/status").mock(
+            return_value=httpx.Response(
+                200, json={"filters": [], "whitelist_filters": [], "user_rules": []}
+            )
+        )
+        router.get("/control/rewrite/list").mock(return_value=httpx.Response(200, json=[]))
+        router.get("/control/dns_info").mock(return_value=httpx.Response(200, json={}))
+        router.get("/control/blocked_services/get").mock(
+            return_value=httpx.Response(404, text="not found")
+        )
+
+        client = AdGuardClient(host_config)
+        result = await client.snapshot()
+        await client.aclose()
+
+    assert result.reachable is True
+    assert result.blocked_services_supported is False
+    assert result.blocked_services.ids == []
 
 
 @pytest.mark.asyncio

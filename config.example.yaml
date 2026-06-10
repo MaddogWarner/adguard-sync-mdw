@@ -1,7 +1,17 @@
 interval_minutes: 5
 dry_run: true
 database_path: /data/adguard-sync.db
+history_retention_days: 14
 log_level: INFO
+
+# The dashboard serves HTTPS by default. With no cert provided, a self-signed
+# certificate is generated under the data directory (/data/certs). To use your
+# own certificate, mount the PEM files and point cert_file/key_file at them.
+# Set enabled: false only when TLS is terminated by a reverse proxy in front.
+tls:
+  enabled: true
+  # cert_file: /config/certs/server.crt
+  # key_file: /config/certs/server.key
 
 primary:
   name: primary
@@ -31,5 +41,8 @@ scope:
     enabled: true
     prune: true
   upstream_dns:
+    enabled: true
+    prune: false
+  blocked_services:
     enabled: true
     prune: false

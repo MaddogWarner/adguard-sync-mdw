@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from app.adguard.models import Filter, HostSnapshot, Rewrite, UpstreamDnsConfig
+from app.adguard.models import (
+    BlockedServices,
+    Filter,
+    HostSnapshot,
+    Rewrite,
+    UpstreamDnsConfig,
+)
 from app.config import ScopeConfig
 from app.sync.result import ChangeAction, Domain, DomainResult, DriftItem, Op
 
@@ -129,6 +135,35 @@ def diff_upstream(primary: UpstreamDnsConfig, follower: UpstreamDnsConfig) -> Do
     return result
 
 
+def _normalise_blocked_services(value: BlockedServices) -> dict[str, object]:
+    return {"ids": sorted(value.ids), "schedule": value.schedule}
+
+
+def diff_blocked_services(primary: BlockedServices, follower: BlockedServices) -> DomainResult:
+    result = DomainResult(Domain.BLOCKED_SERVICES)
+    primary_value = _normalise_blocked_services(primary)
+    follower_value = _normalise_blocked_services(follower)
+    if primary_value != follower_value:
+        result.actions.append(
+            ChangeAction(
+                Domain.BLOCKED_SERVICES,
+                Op.REPLACE,
+                "blocked_services",
+                {"ids": primary.ids, "schedule": primary.schedule},
+            )
+        )
+        result.drift.append(
+            DriftItem(
+                Domain.BLOCKED_SERVICES,
+                "changed",
+                "blocked_services",
+                primary_value,
+                follower_value,
+            )
+        )
+    return result
+
+
 def diff_host(
     primary_snapshot: HostSnapshot,
     follower_snapshot: HostSnapshot,
@@ -165,4 +200,15 @@ def diff_host(
         )
     if scope.upstream_dns.enabled:
         results.append(diff_upstream(primary_snapshot.upstream, follower_snapshot.upstream))
+    if (
+        scope.blocked_services.enabled
+        and primary_snapshot.blocked_services_supported
+        and follower_snapshot.blocked_services_supported
+    ):
+        results.append(
+            diff_blocked_services(
+                primary_snapshot.blocked_services,
+                follower_snapshot.blocked_services,
+            )
+        )
     return results
