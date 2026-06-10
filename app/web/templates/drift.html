@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<section>
+  <h2>Current Drift</h2>
+  <table>
+    <thead><tr><th>Follower</th><th>Domain</th><th>Kind</th><th>Target</th></tr></thead>
+    <tbody>
+      {% for item in drift %}
+      <tr>
+        <td>{{ item.follower }}</td>
+        <td>{{ item.domain }}</td>
+        <td>{{ item.kind }}</td>
+        <td>{{ item.target }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4">No drift recorded.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

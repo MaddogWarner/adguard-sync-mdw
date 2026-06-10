@@ -1,0 +1,35 @@
+interval_minutes: 5
+dry_run: true
+database_path: /data/adguard-sync.db
+log_level: INFO
+
+primary:
+  name: primary
+  url: https://adguard-primary.example.local
+  username: admin
+  password: ${ADGUARD_PRIMARY_PASSWORD}
+  verify_ssl: true
+
+followers:
+  - name: follower-a
+    url: https://adguard-follower-a.example.local
+    username: admin
+    password: ${ADGUARD_FOLLOWER_A_PASSWORD}
+    verify_ssl: true
+
+scope:
+  blocklists:
+    enabled: true
+    prune: true
+  allowlists:
+    enabled: true
+    prune: true
+  user_rules:
+    enabled: true
+    prune: false
+  rewrites:
+    enabled: true
+    prune: true
+  upstream_dns:
+    enabled: true
+    prune: false

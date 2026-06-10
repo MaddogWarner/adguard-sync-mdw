@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en-AU">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AdGuard Sync</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="/static/htmx.min.js"></script>
+  </head>
+  <body>
+    <header>
+      <h1>AdGuard Sync</h1>
+      <nav>
+        <a href="/">Status</a>
+        <a href="/drift">Drift</a>
+        <a href="/history">History</a>
+      </nav>
+    </header>
+    {% if dry_run %}<div class="banner">DRY RUN</div>{% endif %}
+    <main>{% block content %}{% endblock %}</main>
+  </body>
+</html>

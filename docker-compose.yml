@@ -1,0 +1,11 @@
+services:
+  adguard-sync:
+    build: .
+    container_name: adguard-sync
+    env_file: .env
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config.yaml:/config/config.yaml:ro
+      - ./data:/data
+    restart: unless-stopped

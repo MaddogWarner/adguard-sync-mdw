@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<section>
+  <h2>History</h2>
+  <table>
+    <thead><tr><th>ID</th><th>Follower</th><th>Status</th><th>Added</th><th>Updated</th><th>Removed</th></tr></thead>
+    <tbody>
+      {% for run in runs %}
+      <tr>
+        <td>{{ run.id }}</td>
+        <td>{{ run.follower }}</td>
+        <td>{{ run.status }}</td>
+        <td>{{ run.added }}</td>
+        <td>{{ run.updated }}</td>
+        <td>{{ run.removed }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6">No sync history recorded.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}
