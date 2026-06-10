@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.1] - 2026-06-10
+
+### Fixed
+
+- Config load now emits a clear, actionable error when `config.yaml` is a directory instead of a file. This happens on a fresh install when Docker bind-mounts a non-existent host path and creates a directory there automatically. The message tells the user to stop the container, delete the directory, create the file from `config.example.yaml`, and start again.
+- README Quick Start now warns that `config.yaml` must exist as a file on the host before starting the container.
+
 ## [1.1.0] - 2026-06-10
 
 ### Added

@@ -142,6 +142,13 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     config_path = Path(path or os.environ.get(CONFIG_PATH_ENV, DEFAULT_CONFIG_PATH))
     try:
         raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    except IsADirectoryError as exc:
+        raise ConfigError(
+            f"{config_path} is a directory, not a file. "
+            "Docker created it automatically because the host-side file did not exist before the "
+            "container started. Stop the container, delete that directory, create the file "
+            "(e.g. copy config.example.yaml to config.yaml), then start again."
+        ) from exc
     except OSError as exc:
         raise ConfigError(f"could not read config file {config_path}: {exc}") from exc
     try:

@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app import __version__
 from app.config import AppConfig, HostConfig
 from app.config_manager import ConfigManager, dump_config
 from app.runtime import AppRuntime
@@ -123,7 +124,7 @@ def test_healthz_and_status_page_render(tmp_path):
         "Settings page added, as per request from cry baby Stinson, who's bad at IT."
         in response.text
     )
-    assert "v1.1.0" in response.text
+    assert f"v{__version__}" in response.text
     assert 'hx-post="/sync-now"' in response.text
     assert 'hx-post="/api/sync"' not in response.text
 

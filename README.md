@@ -59,6 +59,8 @@ docker pull ghcr.io/maddogwarner/adguard-sync-mdw:latest
 
 Prepare your config and run it:
 
+> **Important:** create `config.yaml` as a file before starting the container. If the file does not exist when Docker starts, Docker will create a directory at that path and the app will fail to read it. Copy the example first, then edit it.
+
 ```bash
 cp config.example.yaml config.yaml   # edit hosts and scope
 cp .env.example .env                 # set AdGuard passwords (and dashboard auth)
