@@ -17,6 +17,7 @@ RUN useradd --create-home --system adguard-sync \
   && chown -R adguard-sync:adguard-sync /app /config /data
 COPY --from=builder /opt/venv /opt/venv
 COPY app ./app
+COPY config.example.yaml ./config.example.yaml
 USER adguard-sync
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \

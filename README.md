@@ -57,26 +57,19 @@ Prebuilt multi-arch images (`linux/amd64`, `linux/arm64`) are published to the G
 docker pull ghcr.io/maddogwarner/adguard-sync-mdw:latest
 ```
 
-Prepare your config and run it:
-
-> **Important:** `config.yaml` must exist as a populated file before starting the container.
-> - If the file does not exist, Docker will create a **directory** at that path and the app will fail with `Is a directory`.
-> - If the file is empty (e.g. created with `touch`), the app will fail with `missing required fields`.
->
-> Always copy the example and fill in your AdGuard host details first: `cp config.example.yaml config.yaml`
-
 ```bash
-cp config.example.yaml config.yaml   # edit hosts and scope
-cp .env.example .env                 # set AdGuard passwords (and dashboard auth)
+cp .env.example .env   # fill in your AdGuard passwords
 
 docker run -d --name adguard-sync \
   -p 8080:8080 \
   --env-file .env \
-  -v "$PWD/config.yaml:/config/config.yaml" \
+  -v "$PWD/config:/config" \
   -v "$PWD/data:/data" \
   --restart unless-stopped \
   ghcr.io/maddogwarner/adguard-sync-mdw:latest
 ```
+
+On first run, `config.yaml` is seeded automatically from the bundled example. Open the dashboard at `https://<host>:8080`, go to **Settings**, and update the primary and follower host URLs to your real AdGuard instances.
 
 Or with Docker Compose, using the published image instead of a local build:
 
@@ -89,12 +82,12 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./config.yaml:/config/config.yaml
+      - ./config:/config
       - ./data:/data
     restart: unless-stopped
 ```
 
-Pin a specific release (e.g. `:v0.1.0`) instead of `:latest` for reproducible deployments. Available tags are listed on the [releases page](https://github.com/MaddogWarner/adguard-sync-mdw/releases) and the [package page](https://github.com/MaddogWarner/adguard-sync-mdw/pkgs/container/adguard-sync-mdw).
+Pin a specific release (e.g. `:v1.2.0`) instead of `:latest` for reproducible deployments. Available tags are listed on the [releases page](https://github.com/MaddogWarner/adguard-sync-mdw/releases) and the [package page](https://github.com/MaddogWarner/adguard-sync-mdw/pkgs/container/adguard-sync-mdw).
 
 ### Build locally instead
 

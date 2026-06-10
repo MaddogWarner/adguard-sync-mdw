@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
+import shutil
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI
@@ -14,9 +17,26 @@ from app.runtime import AppRuntime
 from app.tls import resolve_tls
 from app.web.routes import create_router
 
+_logger = logging.getLogger(__name__)
+
+
+def _seed_config_if_missing(config_path: Path) -> None:
+    if config_path.exists():
+        return
+    example = Path(__file__).parent.parent / "config.example.yaml"
+    if not example.exists():
+        return
+    _logger.info(
+        "config.yaml not found — seeding from config.example.yaml. "
+        "Open the Settings page to configure your AdGuard hosts."
+    )
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(example, config_path)
+
 
 def build_app() -> FastAPI:
     config_manager = ConfigManager()
+    _seed_config_if_missing(config_manager.path)
     config = load_config(config_manager.path)
     setup_logging(config.log_level)
     runtime = AppRuntime.build(config, config_manager)

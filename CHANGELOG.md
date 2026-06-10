@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.0] - 2026-06-10
+
+### Added
+
+- `config.yaml` is now seeded automatically from the bundled example on first run if the file is absent. No manual copy step required — run the container, open Settings, and configure your hosts from the dashboard.
+- `.env.example` added to the repository.
+
+### Changed
+
+- Volume mount updated to a directory (`./config:/config` instead of `./config.yaml:/config/config.yaml`). Docker now creates `./config/` as a directory on the host when it does not exist, eliminating the Docker directory-creation trap that caused the v1.1.1 bug.
+
 ## [1.1.2] - 2026-06-10
 
 ### Fixed
