@@ -59,7 +59,11 @@ docker pull ghcr.io/maddogwarner/adguard-sync-mdw:latest
 
 Prepare your config and run it:
 
-> **Important:** create `config.yaml` as a file before starting the container. If the file does not exist when Docker starts, Docker will create a directory at that path and the app will fail to read it. Copy the example first, then edit it.
+> **Important:** `config.yaml` must exist as a populated file before starting the container.
+> - If the file does not exist, Docker will create a **directory** at that path and the app will fail with `Is a directory`.
+> - If the file is empty (e.g. created with `touch`), the app will fail with `missing required fields`.
+>
+> Always copy the example and fill in your AdGuard host details first: `cp config.example.yaml config.yaml`
 
 ```bash
 cp config.example.yaml config.yaml   # edit hosts and scope

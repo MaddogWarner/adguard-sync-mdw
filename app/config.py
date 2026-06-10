@@ -151,6 +151,14 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         ) from exc
     except OSError as exc:
         raise ConfigError(f"could not read config file {config_path}: {exc}") from exc
+    required = {"interval_minutes", "primary", "followers"}
+    missing = required - raw.keys()
+    if missing:
+        raise ConfigError(
+            f"{config_path} is missing required fields: {', '.join(sorted(missing))}. "
+            "Make sure you copied config.example.yaml to config.yaml and filled in your "
+            "AdGuard host details before starting the container."
+        )
     try:
         data = _interpolate(raw)
         data.setdefault("dashboard_user", os.environ.get("DASHBOARD_USER"))

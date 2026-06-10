@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.2] - 2026-06-10
+
+### Fixed
+
+- Config load now catches an empty or skeleton `config.yaml` (e.g. created with `touch`) and reports exactly which required fields are missing with a clear instruction to copy `config.example.yaml`.
+- README Quick Start warning updated to cover both the directory and the empty-file traps.
+
 ## [1.1.1] - 2026-06-10
 
 ### Fixed
