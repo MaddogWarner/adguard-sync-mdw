@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import contextlib
 import logging
+import os
+import pwd
 import shutil
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -20,6 +23,20 @@ from app.web.routes import create_router
 _logger = logging.getLogger(__name__)
 
 
+def _drop_privileges_if_root() -> None:
+    if os.getuid() != 0:
+        return
+    try:
+        pw = pwd.getpwnam("adguard-sync")
+    except KeyError:
+        return
+    for path in ("/config", "/data"):
+        with contextlib.suppress(OSError):
+            os.chown(path, pw.pw_uid, pw.pw_gid)
+    os.setgid(pw.pw_gid)
+    os.setuid(pw.pw_uid)
+
+
 def _seed_config_if_missing(config_path: Path) -> None:
     if config_path.exists():
         return
@@ -35,6 +52,7 @@ def _seed_config_if_missing(config_path: Path) -> None:
 
 
 def build_app() -> FastAPI:
+    _drop_privileges_if_root()
     config_manager = ConfigManager()
     _seed_config_if_missing(config_manager.path)
     config = load_config(config_manager.path)

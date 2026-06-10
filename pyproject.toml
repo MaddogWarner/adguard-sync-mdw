@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "adguard-sync"
-version = "1.2.0"
+version = "1.2.1"
 description = "Synchronise AdGuard Home configuration from one primary host to followers."
 readme = "README.md"
 requires-python = ">=3.12"

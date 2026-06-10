@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.1] - 2026-06-10
+
+### Fixed
+
+- Container now starts as root, fixes ownership of the `/config` and `/data` bind-mount directories, then drops to the `adguard-sync` non-root user before the app runs. This resolves the `PermissionError` when Docker creates the `./config` directory as root on a fresh host.
+
 ## [1.2.0] - 2026-06-10
 
 ### Added
