@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import secrets
-from typing import Annotated, Any
+from typing import Annotated, Any, NoReturn
 from urllib.parse import parse_qs
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -41,7 +41,7 @@ def auth_dependency(runtime: AppRuntime):
     return verify
 
 
-def raise_auth() -> None:
+def raise_auth() -> NoReturn:
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Authentication required",

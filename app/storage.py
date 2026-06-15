@@ -145,7 +145,7 @@ class Storage:
                     error,
                 ),
             )
-            return int(cursor.lastrowid)
+            return int(cursor.lastrowid)  # type: ignore[arg-type]
 
     def record_changes(
         self,
@@ -273,5 +273,5 @@ class Storage:
         return deleted
 
 
-def serialise_dataclass(value: object) -> dict[str, Any]:
+def serialise_dataclass(value: Any) -> dict[str, Any]:
     return asdict(value)

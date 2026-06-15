@@ -80,7 +80,7 @@ app = build_app()
 def main() -> None:
     tls = resolve_tls(app.state.runtime.config)
     ssl_kwargs = {"ssl_certfile": tls.cert_file, "ssl_keyfile": tls.key_file} if tls else {}
-    uvicorn.run(app, host="0.0.0.0", port=8080, **ssl_kwargs)
+    uvicorn.run(app, host="0.0.0.0", port=8080, **ssl_kwargs)  # type: ignore[arg-type]
 
 
 if __name__ == "__main__":
