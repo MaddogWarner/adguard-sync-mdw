@@ -11,7 +11,7 @@ requires-python = ">=3.12"
 license = { text = "MIT" }
 dependencies = [
   "apscheduler>=3.11.3,<4",
-  "cryptography>=48.0.1,<49",
+  "cryptography>=49.0.0,<50",
   "fastapi>=0.139.0,<1",
   "httpx>=0.28.1,<1",
   "jinja2>=3.1.6,<4",
