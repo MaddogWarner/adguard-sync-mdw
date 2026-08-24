@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.2] - 2026-08-24
+
+First release since 1.2.1. It carries a backlog of security and supply-chain work
+that had accumulated on `main` but was never published as an image.
+
+### Security
+
+- `cryptography` raised to `>=50.0.0,<51`, closing the advisory affecting the `<49`
+  range this project previously pinned.
+- `jinja2` raised to `>=3.1.6`, `pyyaml` to `>=6.0.3`, `pydantic` to `>=2.13.4`.
+- Runtime base image moved from `python:3.12-slim` to `python:3.14-slim`.
+- `fastapi`, `uvicorn`, `httpx` and `apscheduler` moved to current maintained ranges.
+
+### Added
+
+- Container images are now built and pushed on every merge to `main`, tagged `main`
+  and `sha-<short>`. Previously no image was produced until a version tag, so fixes
+  merged to `main` never reached users. `latest` is unchanged and still tracks the
+  most recent release.
+- CodeQL analysis, Trivy image scanning gated on CRITICAL findings, mypy type
+  checking, and dependency-review CI.
+- Dependabot configuration and CODEOWNERS.
+
+### Changed
+
+- Release image tags are now derived by `docker/metadata-action`. Published tag names
+  are unchanged (`v<version>` and `latest`).
+
 ## [1.2.1] - 2026-06-10
 
 ### Fixed
