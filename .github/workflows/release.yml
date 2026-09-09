@@ -47,15 +47,19 @@ jobs:
           push: false
           tags: ${{ env.IMAGE }}:scan-${{ github.sha }}
 
-      - name: Trivy scan
+      # Reporting scan: records everything, including CVEs with no vendor patch, so
+      # they stay visible in code scanning. security.yml only scans the filesystem,
+      # so this is the only thing that sees base-image OS packages. Never fails the
+      # build — the gate below decides that.
+      - name: Trivy scan (report)
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: image
           image-ref: ${{ env.IMAGE }}:scan-${{ github.sha }}
           format: sarif
           output: trivy-image.sarif
-          severity: CRITICAL
-          exit-code: '1'
+          severity: CRITICAL,HIGH
+          exit-code: '0'
 
       - name: Upload Trivy results
         if: always()
@@ -63,6 +67,21 @@ jobs:
         with:
           sarif_file: trivy-image.sarif
           category: container
+
+      # Release gate: blocks only on CRITICALs we can actually act on. `ignore-unfixed`
+      # stops unpatchable base-image CVEs (e.g. the perl-base CRITICALs in
+      # python:3.14-slim, which have no fixed version) from holding every security
+      # release hostage. Those findings are not lost — the reporting scan above
+      # already uploaded them to code scanning.
+      - name: Trivy gate — fixable CRITICALs
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: image
+          image-ref: ${{ env.IMAGE }}:scan-${{ github.sha }}
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
 
       - id: push
         uses: docker/build-push-action@v7
