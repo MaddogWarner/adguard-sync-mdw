@@ -44,7 +44,7 @@ jobs:
           semgrep --config=p/default --config=p/secrets --config=p/owasp-top-ten --error --quiet || true
 
       - name: Trivy filesystem scan
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           scan-ref: .
