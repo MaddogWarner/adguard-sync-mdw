@@ -123,6 +123,10 @@ Serve a provided certificate by also mounting it, e.g. `-v "$PWD/certs:/config/c
 
 `CONFIG_PATH` defaults to `/config/config.yaml`. `DATABASE_PATH` can override the SQLite path for local smoke tests or alternate mounts.
 
+Dashboard POST requests require an `Origin` (or, if absent, `Referer`) matching the dashboard scheme, host and port. Reverse proxies must preserve `Host`; forwarded headers are not trusted. Preserve the browser-facing scheme by using HTTPS to the container when serving HTTPS externally. HTML forms include a validation token; reload the page after a restart. Programmatic `POST /api/sync` calls must send the matching `Origin` and `X-Requested-With: AdGuardSync` headers.
+
+Changing a host URL requires updating the URL and password environment reference in `config.yaml`, re-entering the password in `.env`, and restarting the container. Settings rejects URL changes that would reuse a stored credential; unchanged URLs retain their references.
+
 The dashboard Settings page can edit the app-managed `config.yaml` and apply normal sync settings live. The config file must be writable by the container user, so do not mount it read-only. TLS listener changes and database path changes are saved but require a container restart because those components are initialised at process startup.
 
 | Field | Purpose |

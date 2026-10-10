@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.3] - 10/10/2026
+
+### Security
+
+Dashboard requests are now validated for origin and CSRF token, and stored host credentials are no longer reused when a host URL changes (GHSA-p2r5-c6vx-2ccj).
+
 ## [1.2.2] - 2026-08-24
 
 First release since 1.2.1. It carries a backlog of security and supply-chain work
