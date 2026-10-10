@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import secrets
 from typing import Annotated, Any, NoReturn
@@ -13,6 +15,7 @@ from fastapi.templating import Jinja2Templates
 from app import __version__
 from app.config import AppConfig, ConfigError
 from app.config_manager import SCOPE_KEYS, FormValue, raw_config_from_form
+from app.origins import parse_origin
 from app.runtime import AppRuntime
 from app.storage import Storage
 
@@ -216,6 +219,48 @@ async def _urlencoded_form(request: Request) -> dict[str, FormValue]:
 def create_router(*, runtime: AppRuntime) -> APIRouter:
     router = APIRouter()
     protected = [Depends(auth_dependency(runtime))]
+    secret = secrets.token_urlsafe(32)
+    csrf_token = hmac.new(secret.encode(), b"dashboard-forms", hashlib.sha256).hexdigest()
+
+    def render(request: Request, name: str, context: dict[str, Any], **kwargs: Any) -> Any:
+        return templates.TemplateResponse(
+            request, name, {**context, "csrf_token": csrf_token}, **kwargs
+        )
+
+    async def validate_post(request: Request) -> None:
+        # The ASGI scheme reflects the listener; main() disables forwarded-header trust.
+        expected = parse_origin(f"{request.scope['scheme']}://{request.headers.get('host', '')}")
+        origin = request.headers.get("origin")
+        supplied = (
+            parse_origin(origin)
+            if origin is not None
+            else parse_origin(request.headers.get("referer", ""), referer=True)
+        )
+        allowed = runtime.config.dashboard_allowed_origins
+        if allowed:
+            # Match Origin and Host to the same entry, ignoring the upstream TLS scheme.
+            expected = (
+                parse_origin(f"{supplied[0]}://{request.headers.get('host', '')}")
+                if supplied is not None
+                else None
+            )
+            origin_allowed = supplied in {parse_origin(value) for value in allowed}
+        else:
+            origin_allowed = True
+        if supplied is None or expected != supplied or not origin_allowed:
+            raise HTTPException(status_code=403, detail="Same-origin request required")
+        if request.url.path == "/api/sync":
+            if request.headers.get("x-requested-with") != "AdGuardSync":
+                raise HTTPException(status_code=403, detail="X-Requested-With header required")
+            return
+        token = request.headers.get("x-csrf-token")
+        if token is None and request.url.path == "/settings":
+            value = (await _urlencoded_form(request)).get("csrf_token", "")
+            token = value if isinstance(value, str) else ""
+        if not secrets.compare_digest((token or "").encode(), csrf_token.encode()):
+            raise HTTPException(status_code=403, detail="Valid CSRF token required")
+
+    post_protected = [Depends(validate_post), *protected]
 
     @router.get("/healthz")
     async def healthz() -> dict[str, str]:
@@ -223,16 +268,16 @@ def create_router(*, runtime: AppRuntime) -> APIRouter:
 
     @router.get("/", response_class=HTMLResponse, dependencies=protected)
     async def status_page(request: Request) -> Any:
-        return templates.TemplateResponse(
+        return render(
             request,
             "status.html",
             status_context(runtime.config, runtime.storage),
         )
 
-    @router.post("/sync-now", response_class=HTMLResponse, dependencies=protected)
+    @router.post("/sync-now", response_class=HTMLResponse, dependencies=post_protected)
     async def sync_now(request: Request) -> Any:
         run_ids = await runtime.scheduler.trigger_now()
-        return templates.TemplateResponse(
+        return render(
             request,
             "status_content.html",
             status_context(runtime.config, runtime.storage, _sync_message(run_ids)),
@@ -240,13 +285,13 @@ def create_router(*, runtime: AppRuntime) -> APIRouter:
 
     @router.get("/settings", response_class=HTMLResponse, dependencies=protected)
     async def settings_page(request: Request) -> Any:
-        return templates.TemplateResponse(
+        return render(
             request,
             "settings.html",
             settings_context(runtime),
         )
 
-    @router.post("/settings", response_class=HTMLResponse, dependencies=protected)
+    @router.post("/settings", response_class=HTMLResponse, dependencies=post_protected)
     async def save_settings(request: Request) -> Any:
         try:
             raw = raw_config_from_form(
@@ -258,7 +303,7 @@ def create_router(*, runtime: AppRuntime) -> APIRouter:
             message = "Settings saved and applied."
             if result.restart_required:
                 message = "Settings saved. Restart the container for TLS or database path changes."
-            return templates.TemplateResponse(
+            return render(
                 request,
                 "settings.html",
                 settings_context(
@@ -268,14 +313,14 @@ def create_router(*, runtime: AppRuntime) -> APIRouter:
                 ),
             )
         except ConfigError as exc:
-            return templates.TemplateResponse(
+            return render(
                 request,
                 "settings.html",
                 settings_context(runtime, error=str(exc)),
                 status_code=400,
             )
         except ValueError as exc:
-            return templates.TemplateResponse(
+            return render(
                 request,
                 "settings.html",
                 settings_context(runtime, error=str(exc)),
@@ -284,7 +329,7 @@ def create_router(*, runtime: AppRuntime) -> APIRouter:
 
     @router.get("/drift", response_class=HTMLResponse, dependencies=protected)
     async def drift_page(request: Request) -> Any:
-        return templates.TemplateResponse(
+        return render(
             request,
             "drift.html",
             {
@@ -295,7 +340,7 @@ def create_router(*, runtime: AppRuntime) -> APIRouter:
 
     @router.get("/history", response_class=HTMLResponse, dependencies=protected)
     async def history_page(request: Request) -> Any:
-        return templates.TemplateResponse(
+        return render(
             request,
             "history.html",
             {"dry_run": runtime.config.dry_run, "runs": runtime.storage.recent_runs()},
@@ -317,7 +362,7 @@ def create_router(*, runtime: AppRuntime) -> APIRouter:
     async def api_drift() -> list[dict[str, Any]]:
         return runtime.storage.current_drift()
 
-    @router.post("/api/sync", dependencies=protected)
+    @router.post("/api/sync", dependencies=post_protected)
     async def api_sync() -> dict[str, Any]:
         return {"run_ids": await runtime.scheduler.trigger_now()}
 

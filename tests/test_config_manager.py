@@ -138,8 +138,10 @@ def test_raw_config_from_form_preserves_password_refs_from_existing_config():
             "follower_username": ["admin"],
         },
         {
-            "primary": {"password": "${ADGUARD_PRIMARY_PASSWORD}"},
-            "followers": [{"password": "${ADGUARD_FOLLOWER_A_PASSWORD}"}],
+            "primary": {"url": "http://primary.local", "password": "${ADGUARD_PRIMARY_PASSWORD}"},
+            "followers": [
+                {"url": "http://follower-a.local", "password": "${ADGUARD_FOLLOWER_A_PASSWORD}"}
+            ],
         },
     )
 
@@ -161,3 +163,43 @@ def test_raw_config_from_form_requires_existing_password_refs():
             },
             {},
         )
+
+
+@pytest.mark.parametrize("host", ["primary", "follower"])
+def test_changed_host_url_cannot_reuse_password(tmp_path, host):
+    existing = raw_config(tmp_path)
+    form = {
+        "primary_url": "http://primary.local",
+        "follower_name": ["follower-a"],
+        "follower_url": ["http://follower-a.local"],
+    }
+    form[f"{host}_url"] = "http://replacement.local"
+    before = dump_config(existing)
+    with pytest.raises(ConfigError, match="URL changed.*password"):
+        raw_config_from_form(form, existing)
+    assert dump_config(existing) == before
+
+
+@pytest.mark.parametrize("submitted_user", [None, "", "new-operator"])
+def test_dashboard_auth_retained_without_explicit_valid_change(tmp_path, submitted_user):
+    existing = raw_config(tmp_path)
+    existing.update(dashboard_user="operator", dashboard_password="${DASHBOARD_PASSWORD}")
+    form = {"primary_url": "http://primary.local"}
+    if submitted_user is not None:
+        form["dashboard_user"] = submitted_user
+    result = raw_config_from_form(form, existing)
+    assert result["dashboard_user"] == (submitted_user or "operator")
+    assert result["dashboard_password"] == "${DASHBOARD_PASSWORD}"
+
+
+def test_settings_form_preserves_allowed_origins(tmp_path):
+    existing = raw_config(tmp_path)
+    existing["dashboard_allowed_origins"] = ["https://sync.example"]
+    result = raw_config_from_form(
+        {
+            "primary_url": "http://primary.local",
+            "dashboard_allowed_origins": "https://foreign.example",
+        },
+        existing,
+    )
+    assert result["dashboard_allowed_origins"] == ["https://sync.example"]

@@ -16,6 +16,7 @@ from app.config import (
     DEFAULT_CONFIG_PATH,
     AppConfig,
     ConfigError,
+    _apply_dashboard_origins_env,
     _apply_tls_env,
     _interpolate,
 )
@@ -86,6 +87,7 @@ def raw_config_for_validation(raw: Mapping[str, Any]) -> dict[str, Any]:
     if database_path := os.environ.get("DATABASE_PATH"):
         data["database_path"] = database_path
     _apply_tls_env(data)
+    _apply_dashboard_origins_env(data)
     return data
 
 
@@ -147,16 +149,31 @@ def _existing_secret_ref(raw: Mapping[str, Any], *path: str) -> str:
     raise ConfigError(f"missing password reference at {'.'.join(path)}")
 
 
+def _bound_password_ref(existing: Mapping[str, Any], url: str, host: str) -> str:
+    password = _existing_secret_ref(existing, "password")
+    if url != existing.get("url"):
+        raise ConfigError(
+            f"{host} URL changed: update the host URL and password environment reference "
+            "in config.yaml and re-enter the password in .env before restarting."
+        )
+    return password
+
+
 def raw_config_from_form(
     form: Mapping[str, FormValue],
     existing_raw: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     existing_raw = existing_raw or {}
+    existing_primary = existing_raw.get("primary", {})
+    if not isinstance(existing_primary, Mapping):
+        existing_primary = {}
     primary = {
         "name": _form_text(form, "primary_name"),
         "url": _form_text(form, "primary_url"),
         "username": _form_text(form, "primary_username"),
-        "password": _existing_secret_ref(existing_raw, "primary", "password"),
+        "password": _bound_password_ref(
+            existing_primary, _form_text(form, "primary_url"), "Primary"
+        ),
         "verify_ssl": _form_bool(form, "primary_verify_ssl"),
     }
 
@@ -186,7 +203,11 @@ def raw_config_from_form(
                 "name": str(name).strip(),
                 "url": str(urls[index]).strip() if index < len(urls) else "",
                 "username": str(usernames[index]).strip() if index < len(usernames) else "",
-                "password": _existing_secret_ref(existing_follower, "password"),
+                "password": _bound_password_ref(
+                    existing_follower,
+                    str(urls[index]).strip() if index < len(urls) else "",
+                    f"Follower {index + 1}",
+                ),
                 "verify_ssl": str(index) in verify_ssl_values,
             }
         )
@@ -212,6 +233,9 @@ def raw_config_from_form(
             for key in SCOPE_KEYS
         },
     }
+    for key in ("dashboard_user", "dashboard_password", "dashboard_allowed_origins"):
+        if key in existing_raw:
+            raw[key] = existing_raw[key]
     dashboard_user = _form_text(form, "dashboard_user")
     if dashboard_user:
         raw["dashboard_user"] = dashboard_user
