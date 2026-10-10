@@ -9,6 +9,8 @@ from urllib.parse import urlparse
 import yaml
 from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
 
+from app.origins import parse_origin
+
 CONFIG_PATH_ENV = "CONFIG_PATH"
 DEFAULT_CONFIG_PATH = "/config/config.yaml"
 _ENV_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
@@ -63,9 +65,18 @@ class AppConfig(BaseModel):
     followers: list[HostConfig]
     dashboard_user: str | None = None
     dashboard_password: SecretStr | None = None
+    dashboard_allowed_origins: list[str] = Field(default_factory=list)
     database_path: str = "/data/adguard-sync.db"
     history_retention_days: int = 14
     log_level: str = "INFO"
+
+    @field_validator("dashboard_allowed_origins")
+    @classmethod
+    def validate_dashboard_origins(cls, values: list[str]) -> list[str]:
+        origins = [value.strip() for value in values]
+        if any(parse_origin(value) is None for value in origins):
+            raise ValueError("dashboard_allowed_origins must contain exact HTTP(S) origins")
+        return origins
 
     @field_validator("interval_minutes")
     @classmethod
@@ -138,6 +149,11 @@ def _apply_tls_env(data: dict[str, Any]) -> None:
         data["tls"] = tls
 
 
+def _apply_dashboard_origins_env(data: dict[str, Any]) -> None:
+    if (value := os.environ.get("DASHBOARD_ALLOWED_ORIGINS")) is not None:
+        data["dashboard_allowed_origins"] = value.split(",") if value.strip() else []
+
+
 def load_config(path: str | Path | None = None) -> AppConfig:
     config_path = Path(path or os.environ.get(CONFIG_PATH_ENV, DEFAULT_CONFIG_PATH))
     try:
@@ -167,6 +183,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         if database_path := os.environ.get("DATABASE_PATH"):
             data["database_path"] = database_path
         _apply_tls_env(data)
+        _apply_dashboard_origins_env(data)
         return AppConfig.model_validate(data)
     except ConfigError:
         raise

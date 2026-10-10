@@ -522,3 +522,86 @@ def test_post_uses_listener_scheme_and_host_port(tmp_path, base_url, origin, exp
         "/api/sync", headers={"Origin": origin, "X-Requested-With": "AdGuardSync"}
     )
     assert response.status_code == expected
+
+
+@pytest.mark.parametrize("path", ["/settings", "/sync-now", "/api/sync"])
+@pytest.mark.parametrize("authenticated", [False, True])
+@pytest.mark.parametrize(
+    "origin, host, expected",
+    [
+        ("https://sync.example", "sync.example", 200),
+        ("https://sync.example:443", "sync.example", 200),
+        ("https://sync.example:8443", "sync.example:8443", 200),
+        ("https://foreign.example", "foreign.example", 403),
+        ("https://sync.example", "foreign.example", 403),
+        ("https://sync.example", "sync.example:invalid", 403),
+        ("https://sync.example", "[invalid", 403),
+        ("https://foreign.example", "sync.example", 403),
+        ("http://sync.example", "sync.example", 403),
+        ("https://sync.example:8443", "sync.example", 403),
+        ("https://sync.example", "sync.example:8443", 403),
+        ("https://sync.example:8443", "sync.example:9443", 403),
+        (None, "sync.example", 403),
+        ("null", "sync.example", 403),
+    ],
+)
+def test_allowed_origins_with_http_upstream(
+    tmp_path, monkeypatch, path, authenticated, origin, host, expected
+):
+    from pydantic import SecretStr
+
+    monkeypatch.setenv("ADGUARD_PRIMARY_PASSWORD", "primary-secret")
+    monkeypatch.setenv("ADGUARD_FOLLOWER_A_PASSWORD", "follower-secret")
+    monkeypatch.setenv(
+        "DASHBOARD_ALLOWED_ORIGINS", "https://sync.example,https://sync.example:8443"
+    )
+    config = make_config(tmp_path)
+    config.dashboard_allowed_origins = ["https://sync.example", "https://sync.example:8443"]
+    if authenticated:
+        config.dashboard_user = "operator"
+        config.dashboard_password = SecretStr("test-password")
+    storage = Storage(config.database_path)
+    storage.init_db()
+    client = make_client(config, storage)
+    if authenticated:
+        client.auth = ("operator", "test-password")
+    headers = valid_headers(client)
+    headers.pop("Origin")
+    headers["Host"] = host
+    if origin is not None:
+        headers["Origin"] = origin
+    response = client.post(
+        path,
+        headers=headers,
+        data={
+            "primary_name": "primary",
+            "primary_url": "http://primary.local",
+            "primary_username": "admin",
+            "follower_name": "follower-a",
+            "follower_url": "http://follower-a.local",
+            "follower_username": "admin",
+        },
+    )
+    assert response.status_code == expected
+
+
+@pytest.mark.parametrize(
+    "referer, origin, expected",
+    [
+        ("https://sync.example/settings?tab=hosts", None, 200),
+        ("https://foreign.example/settings", None, 403),
+        ("https://sync.example/settings", "https://foreign.example", 403),
+    ],
+)
+def test_allowed_origins_referer_fallback(tmp_path, referer, origin, expected):
+    config = make_config(tmp_path)
+    config.dashboard_allowed_origins = ["https://sync.example"]
+    storage = Storage(config.database_path)
+    storage.init_db()
+    client = make_client(config, storage)
+    headers = valid_headers(client)
+    headers.pop("Origin")
+    headers.update({"Host": "sync.example", "Referer": referer})
+    if origin is not None:
+        headers["Origin"] = origin
+    assert client.post("/sync-now", headers=headers).status_code == expected

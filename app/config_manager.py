@@ -16,6 +16,7 @@ from app.config import (
     DEFAULT_CONFIG_PATH,
     AppConfig,
     ConfigError,
+    _apply_dashboard_origins_env,
     _apply_tls_env,
     _interpolate,
 )
@@ -86,6 +87,7 @@ def raw_config_for_validation(raw: Mapping[str, Any]) -> dict[str, Any]:
     if database_path := os.environ.get("DATABASE_PATH"):
         data["database_path"] = database_path
     _apply_tls_env(data)
+    _apply_dashboard_origins_env(data)
     return data
 
 
@@ -231,7 +233,7 @@ def raw_config_from_form(
             for key in SCOPE_KEYS
         },
     }
-    for key in ("dashboard_user", "dashboard_password"):
+    for key in ("dashboard_user", "dashboard_password", "dashboard_allowed_origins"):
         if key in existing_raw:
             raw[key] = existing_raw[key]
     dashboard_user = _form_text(form, "dashboard_user")

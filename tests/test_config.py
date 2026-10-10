@@ -124,3 +124,63 @@ def test_empty_followers_rejected(tmp_path):
 
     with pytest.raises(ConfigError, match="at least one follower"):
         load_config(write_config(tmp_path, text))
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        ("", []),
+        ("  ", []),
+        ("https://sync.example", ["https://sync.example"]),
+        (
+            " https://sync.example , https://sync.example:8443 ",
+            ["https://sync.example", "https://sync.example:8443"],
+        ),
+    ],
+)
+def test_allowed_origins_environment(tmp_path, monkeypatch, value, expected):
+    from app.config_manager import load_raw_config, validate_raw_config
+
+    monkeypatch.setenv("DASHBOARD_ALLOWED_ORIGINS", value)
+    path = write_config(tmp_path, base_config())
+    assert load_config(path).dashboard_allowed_origins == expected
+    assert validate_raw_config(load_raw_config(path)).dashboard_allowed_origins == expected
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "https://*.example",
+        "https://sync.example/",
+        "https://sync.example/path",
+        "https://user:password@sync.example",
+        "https://sync.example?",
+        "https://sync.example#",
+        "https://sync.example:invalid",
+        "https://sync.example:70000",
+        "null",
+        "sync.example",
+        "https://sync.example,",
+        "https://sync.example,,https://other.example",
+        "https://sync.example https://other.example",
+        "ftp://sync.example",
+    ],
+)
+def test_invalid_allowed_origins_fail_config_loading(tmp_path, monkeypatch, value):
+    from app.config_manager import load_raw_config, validate_raw_config
+
+    monkeypatch.setenv("DASHBOARD_ALLOWED_ORIGINS", value)
+    path = write_config(tmp_path, base_config())
+    with pytest.raises(ConfigError, match="dashboard_allowed_origins"):
+        load_config(path)
+    with pytest.raises(ConfigError, match="dashboard_allowed_origins"):
+        validate_raw_config(load_raw_config(path))
+
+
+def test_yaml_allowed_origins_and_environment_override(tmp_path, monkeypatch):
+    path = write_config(
+        tmp_path, base_config() + '\ndashboard_allowed_origins: ["https://sync.example"]\n'
+    )
+    assert load_config(path).dashboard_allowed_origins == ["https://sync.example"]
+    monkeypatch.setenv("DASHBOARD_ALLOWED_ORIGINS", "https://override.example")
+    assert load_config(path).dashboard_allowed_origins == ["https://override.example"]

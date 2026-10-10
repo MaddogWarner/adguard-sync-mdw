@@ -190,3 +190,16 @@ def test_dashboard_auth_retained_without_explicit_valid_change(tmp_path, submitt
     result = raw_config_from_form(form, existing)
     assert result["dashboard_user"] == (submitted_user or "operator")
     assert result["dashboard_password"] == "${DASHBOARD_PASSWORD}"
+
+
+def test_settings_form_preserves_allowed_origins(tmp_path):
+    existing = raw_config(tmp_path)
+    existing["dashboard_allowed_origins"] = ["https://sync.example"]
+    result = raw_config_from_form(
+        {
+            "primary_url": "http://primary.local",
+            "dashboard_allowed_origins": "https://foreign.example",
+        },
+        existing,
+    )
+    assert result["dashboard_allowed_origins"] == ["https://sync.example"]

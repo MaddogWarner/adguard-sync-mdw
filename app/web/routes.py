@@ -5,7 +5,7 @@ import hmac
 import json
 import secrets
 from typing import Annotated, Any, NoReturn
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse
@@ -15,6 +15,7 @@ from fastapi.templating import Jinja2Templates
 from app import __version__
 from app.config import AppConfig, ConfigError
 from app.config_manager import SCOPE_KEYS, FormValue, raw_config_from_form
+from app.origins import parse_origin
 from app.runtime import AppRuntime
 from app.storage import Storage
 
@@ -215,26 +216,6 @@ async def _urlencoded_form(request: Request) -> dict[str, FormValue]:
     return result
 
 
-def _origin(value: str, *, referer: bool = False) -> tuple[str, str, int] | None:
-    try:
-        parsed = urlsplit(value)
-        if (
-            any(char.isspace() or ord(char) < 32 for char in value)
-            or parsed.scheme not in {"http", "https"}
-            or not parsed.hostname
-            or parsed.username is not None
-            or parsed.password is not None
-            or (not referer and (parsed.path or parsed.query or parsed.fragment))
-        ):
-            return None
-        port = parsed.port
-        if port is None:
-            port = 443 if parsed.scheme == "https" else 80
-        return (parsed.scheme, parsed.hostname.lower(), port)
-    except ValueError:
-        return None
-
-
 def create_router(*, runtime: AppRuntime) -> APIRouter:
     router = APIRouter()
     protected = [Depends(auth_dependency(runtime))]
@@ -248,14 +229,25 @@ def create_router(*, runtime: AppRuntime) -> APIRouter:
 
     async def validate_post(request: Request) -> None:
         # The ASGI scheme reflects the listener; main() disables forwarded-header trust.
-        expected = _origin(f"{request.url.scheme}://{request.headers.get('host', '')}")
+        expected = parse_origin(f"{request.scope['scheme']}://{request.headers.get('host', '')}")
         origin = request.headers.get("origin")
         supplied = (
-            _origin(origin)
+            parse_origin(origin)
             if origin is not None
-            else _origin(request.headers.get("referer", ""), referer=True)
+            else parse_origin(request.headers.get("referer", ""), referer=True)
         )
-        if expected is None or supplied != expected:
+        allowed = runtime.config.dashboard_allowed_origins
+        if allowed:
+            # Match Origin and Host to the same entry, ignoring the upstream TLS scheme.
+            expected = (
+                parse_origin(f"{supplied[0]}://{request.headers.get('host', '')}")
+                if supplied is not None
+                else None
+            )
+            origin_allowed = supplied in {parse_origin(value) for value in allowed}
+        else:
+            origin_allowed = True
+        if supplied is None or expected != supplied or not origin_allowed:
             raise HTTPException(status_code=403, detail="Same-origin request required")
         if request.url.path == "/api/sync":
             if request.headers.get("x-requested-with") != "AdGuardSync":
