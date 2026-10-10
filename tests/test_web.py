@@ -120,10 +120,7 @@ def test_healthz_and_status_page_render(tmp_path):
     assert "follower unreachable" in response.text
     assert "MaddogWarner/adguard-sync-mdw" in response.text
     assert "maddogwarner.com" in response.text
-    assert (
-        "Settings page added, as per request from cry baby Stinson, who's bad at IT."
-        in response.text
-    )
+    assert "Settings page added" not in response.text
     assert f"v{__version__}" in response.text
     assert 'hx-post="/sync-now"' in response.text
     assert 'hx-post="/api/sync"' not in response.text
