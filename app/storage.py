@@ -229,7 +229,7 @@ class Storage:
         params.append(limit)
         with self._connect() as conn:
             rows = conn.execute(
-                f"SELECT * FROM sync_runs {where} ORDER BY id DESC LIMIT ?",  # noqa: S608
+                f"SELECT * FROM sync_runs {where} ORDER BY id DESC LIMIT ?",  # noqa: S608  # nosec B608 - clauses are fixed strings, values bound
                 params,
             ).fetchall()
             return [dict(row) for row in rows]

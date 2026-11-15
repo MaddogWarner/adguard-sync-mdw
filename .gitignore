@@ -9,3 +9,6 @@ config.yaml
 dist/
 build/
 *.egg-info/
+
+.DS_Store
+.shots-tmp/

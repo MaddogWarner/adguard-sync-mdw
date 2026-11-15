@@ -149,6 +149,29 @@ def _existing_secret_ref(raw: Mapping[str, Any], *path: str) -> str:
     raise ConfigError(f"missing password reference at {'.'.join(path)}")
 
 
+def _checked_path(
+    value: str,
+    existing_raw: Mapping[str, Any],
+    field_name: str,
+    roots: Sequence[Path],
+    *keys: str,
+) -> str:
+    """Accept an unchanged path, or a new one that stays inside an allowed directory.
+
+    Stops the settings form being used to point the app at arbitrary filesystem paths.
+    """
+    current: Any = existing_raw
+    for key in keys:
+        current = current.get(key) if isinstance(current, Mapping) else None
+    if not value or value == current:
+        return value
+    resolved = Path(os.path.normpath(value))
+    if not resolved.is_absolute() or not any(resolved.is_relative_to(root) for root in roots):
+        allowed = ", ".join(str(root) for root in roots)
+        raise ConfigError(f"{field_name} must be an absolute path inside {allowed}")
+    return value
+
+
 def _bound_password_ref(existing: Mapping[str, Any], url: str, host: str) -> str:
     password = _existing_secret_ref(existing, "password")
     if url != existing.get("url"):
@@ -212,16 +235,42 @@ def raw_config_from_form(
             }
         )
 
+    existing_db = str(existing_raw.get("database_path") or "/data/adguard-sync.db")
+    data_root = Path(os.path.normpath(existing_db)).parent
+    path_roots = [data_root, Path("/config")]
+
     raw: dict[str, Any] = {
         "interval_minutes": _form_int(form, "interval_minutes", "5"),
         "dry_run": _form_bool(form, "dry_run"),
-        "database_path": _form_text(form, "database_path", "/data/adguard-sync.db"),
+        "database_path": _checked_path(
+            _form_text(form, "database_path", existing_db),
+            existing_raw,
+            "database_path",
+            [data_root],
+            "database_path",
+        ),
         "history_retention_days": _form_int(form, "history_retention_days", "14"),
         "log_level": _form_text(form, "log_level", "INFO").upper(),
         "tls": {
             "enabled": _form_bool(form, "tls_enabled"),
-            "cert_file": _form_text(form, "tls_cert_file") or None,
-            "key_file": _form_text(form, "tls_key_file") or None,
+            "cert_file": _checked_path(
+                _form_text(form, "tls_cert_file"),
+                existing_raw,
+                "tls cert file",
+                path_roots,
+                "tls",
+                "cert_file",
+            )
+            or None,
+            "key_file": _checked_path(
+                _form_text(form, "tls_key_file"),
+                existing_raw,
+                "tls key file",
+                path_roots,
+                "tls",
+                "key_file",
+            )
+            or None,
         },
         "primary": primary,
         "followers": followers,

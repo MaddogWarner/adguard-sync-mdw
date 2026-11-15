@@ -11,7 +11,9 @@ TIMEOUT = 3
 
 def _probe(url: str, context: ssl.SSLContext | None) -> bool:
     try:
-        with urllib.request.urlopen(url, timeout=TIMEOUT, context=context) as response:
+        with urllib.request.urlopen(  # nosec B310 - fixed http(s) loopback URL
+            url, timeout=TIMEOUT, context=context
+        ) as response:
             return response.status == 200
     except Exception:
         return False

@@ -57,6 +57,11 @@ def build_app() -> FastAPI:
     _seed_config_if_missing(config_manager.path)
     config = load_config(config_manager.path)
     setup_logging(config.log_level)
+    if not config.dashboard_user:
+        _logger.warning(
+            "dashboard_auth_disabled: the dashboard and settings are open to anyone who can "
+            "reach port 8080. Set DASHBOARD_USER and DASHBOARD_PASSWORD."
+        )
     runtime = AppRuntime.build(config, config_manager)
 
     @asynccontextmanager
@@ -80,7 +85,7 @@ app = build_app()
 def main() -> None:
     tls = resolve_tls(app.state.runtime.config)
     ssl_kwargs = {"ssl_certfile": tls.cert_file, "ssl_keyfile": tls.key_file} if tls else {}
-    uvicorn.run(app, host="0.0.0.0", port=8080, proxy_headers=False, **ssl_kwargs)  # type: ignore[arg-type]
+    uvicorn.run(app, host="0.0.0.0", port=8080, proxy_headers=False, **ssl_kwargs)  # type: ignore[arg-type]  # nosec B104 - container listener
 
 
 if __name__ == "__main__":
