@@ -5,6 +5,7 @@ import re
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 
 from app import __version__
 from app.config import AppConfig, HostConfig
@@ -333,6 +334,46 @@ def test_settings_invalid_save_does_not_overwrite_config(tmp_path, monkeypatch):
     assert response.status_code == 400
     assert "interval_minutes" in response.text
     assert config_path.read_text(encoding="utf-8") == before
+
+
+def _auth_client(tmp_path):
+    config = make_config(tmp_path).model_copy(
+        update={"dashboard_user": "admin", "dashboard_password": SecretStr("s3cret")}
+    )
+    runtime = AppRuntime.build(config, ConfigManager(write_raw_config(tmp_path)))
+    app = FastAPI()
+    app.include_router(create_router(runtime=runtime))
+    return TestClient(app)
+
+
+def test_non_ascii_credentials_return_401_not_500(tmp_path):
+    client = _auth_client(tmp_path)
+
+    response = client.get("/api/status", auth=("ädmin", "pässword"))
+
+    assert response.status_code == 401
+
+
+def test_valid_credentials_still_accepted(tmp_path):
+    client = _auth_client(tmp_path)
+
+    assert client.get("/api/status", auth=("admin", "s3cret")).status_code == 200
+
+
+def test_oversized_settings_body_rejected(tmp_path):
+    client = _auth_client(tmp_path)
+
+    response = client.post(
+        "/settings",
+        content="x=" + "a" * (70 * 1024),
+        headers={
+            "content-type": "application/x-www-form-urlencoded",
+            "origin": "http://testserver",
+        },
+        auth=("admin", "s3cret"),
+    )
+
+    assert response.status_code == 413
 
 
 @pytest.mark.parametrize("path", ["/settings", "/sync-now", "/api/sync"])
