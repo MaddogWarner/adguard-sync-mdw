@@ -1,6 +1,6 @@
 <section id="status-content">
   <h2>Status</h2>
-  <button hx-post="/sync-now" hx-target="#status-content" hx-swap="outerHTML">Sync now</button>
+  <button hx-post="/sync-now" hx-headers='{"X-CSRF-Token": "{{ csrf_token }}"}' hx-target="#status-content" hx-swap="outerHTML">Sync now</button>
   {% if sync_message %}
   <p class="sync-result">{{ sync_message }}</p>
   {% endif %}

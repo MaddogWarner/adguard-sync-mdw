@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.3] - 10/10/2026
+
+### Security
+
+Dashboard requests are now validated for origin and CSRF token, and stored host credentials are no longer reused when a host URL changes (GHSA-p2r5-c6vx-2ccj).
+
+### Added
+
+- Optional `DASHBOARD_ALLOWED_ORIGINS` lists exact dashboard origins and requires a matching Host, supporting reverse proxies that terminate TLS and restricting accepted dashboard POST hosts. Unset deployments retain the existing origin check.
+
 ## [1.2.2] - 2026-08-24
 
 First release since 1.2.1. It carries a backlog of security and supply-chain work

@@ -42,6 +42,9 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
+          # Refresh the runtime base on every scan and publish build.
+          pull: true
+          no-cache-filters: runtime
           platforms: linux/amd64
           load: true
           push: false
@@ -52,7 +55,7 @@ jobs:
       # so this is the only thing that sees base-image OS packages. Never fails the
       # build — the gate below decides that.
       - name: Trivy scan (report)
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: image
           image-ref: ${{ env.IMAGE }}:scan-${{ github.sha }}
@@ -74,7 +77,7 @@ jobs:
       # release hostage. Those findings are not lost — the reporting scan above
       # already uploaded them to code scanning.
       - name: Trivy gate — fixable CRITICALs
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: image
           image-ref: ${{ env.IMAGE }}:scan-${{ github.sha }}
@@ -87,6 +90,9 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
+          # Refresh the runtime base on every scan and publish build.
+          pull: true
+          no-cache-filters: runtime
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}

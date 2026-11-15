@@ -7,7 +7,7 @@ RUN python -m venv /opt/venv \
   && /opt/venv/bin/pip install --upgrade pip \
   && /opt/venv/bin/pip install .
 
-FROM python:3.14-slim
+FROM python:3.14-slim AS runtime
 
 ENV PATH="/opt/venv/bin:$PATH" \
     CONFIG_PATH="/config/config.yaml"

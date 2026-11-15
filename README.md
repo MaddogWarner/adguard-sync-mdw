@@ -123,6 +123,14 @@ Serve a provided certificate by also mounting it, e.g. `-v "$PWD/certs:/config/c
 
 `CONFIG_PATH` defaults to `/config/config.yaml`. `DATABASE_PATH` can override the SQLite path for local smoke tests or alternate mounts.
 
+Dashboard POST requests require an `Origin` (or, if absent, `Referer`) matching the dashboard scheme, host and port. Forwarded headers are not trusted.
+
+Set `DASHBOARD_ALLOWED_ORIGINS` to a comma-separated list of exact browser-facing origins, for example `https://sync.example.local,https://sync.example.local:8443`. Each entry must contain only a scheme, host and optional port, with no path, wildcard, credentials, query or fragment. Scheme and port are checked; omitted ports mean 80 for HTTP or 443 for HTTPS. Both the request Origin (or Referer fallback) and Host must match the same entry. Reverse proxies must preserve the browser-facing `Host`, including its port. With this setting, a proxy may terminate HTTPS and forward HTTP to the container (`TLS_ENABLED=false`).
+
+The setting also restricts accepted dashboard POST hosts, including deployments without dashboard credentials. Configure it for those deployments and set dashboard credentials where possible. When unset or blank, the existing listener-scheme/Host comparison remains in effect; HTTPS-facing proxies then require HTTPS upstream. You can alternatively set `dashboard_allowed_origins` as a YAML list in `config.yaml`; the environment setting overrides it. The Settings form preserves this configuration. Restart after changing the environment setting. HTML forms include a validation token; reload the page after a restart. Programmatic `POST /api/sync` calls must send the matching `Origin` and `X-Requested-With: AdGuardSync` headers.
+
+Changing a host URL requires updating the URL and password environment reference in `config.yaml`, re-entering the password in `.env`, and restarting the container. Settings rejects URL changes that would reuse a stored credential; unchanged URLs retain their references.
+
 The dashboard Settings page can edit the app-managed `config.yaml` and apply normal sync settings live. The config file must be writable by the container user, so do not mount it read-only. TLS listener changes and database path changes are saved but require a container restart because those components are initialised at process startup.
 
 | Field | Purpose |
