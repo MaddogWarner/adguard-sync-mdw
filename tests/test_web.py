@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import re
+import threading
+import time
 
 import pytest
 from fastapi import FastAPI
@@ -85,6 +88,7 @@ def make_client(config: AppConfig, storage: Storage, config_path=None) -> TestCl
     runtime.scheduler.storage = storage
     runtime.scheduler.trigger_now = trigger_sync
     app = FastAPI()
+    app.state.runtime = runtime
     app.include_router(create_router(runtime=runtime))
     return TestClient(app)
 
@@ -140,22 +144,56 @@ def test_healthz_and_status_page_render(tmp_path):
     assert status["host_health"][0]["status"] == "online"
 
 
-def test_dashboard_sync_now_renders_html_result_without_api_json(tmp_path):
+def test_dashboard_sync_now_runs_in_background_and_reports_result(tmp_path):
     config = make_config(tmp_path)
     storage = Storage(config.database_path)
     storage.init_db()
-    client = make_client(config, storage)
 
-    api_response = client.post("/api/sync", headers=valid_headers(client))
-    assert api_response.json() == {"run_ids": [1]}
+    with make_client(config, storage) as client:
+        api_response = client.post("/api/sync", headers=valid_headers(client))
+        assert api_response.json() == {"run_ids": [1]}
 
-    response = client.post("/sync-now", headers=valid_headers(client))
+        response = client.post("/sync-now", headers=valid_headers(client))
 
-    assert response.status_code == 200
-    assert "Sync completed. Run ID: 1" in response.text
-    assert '{"run_ids"' not in response.text
-    assert "Configured DNS Hosts" in response.text
-    assert "Sync Runs" in response.text
+        assert response.status_code == 200
+        assert '{"run_ids"' not in response.text
+        assert "Configured DNS Hosts" in response.text
+        assert "Sync Runs" in response.text
+        # The background task finishes almost immediately; poll until it reports.
+        for _ in range(50):
+            polled = client.get("/status-content")
+            if "Sync completed. Run ID: 1" in polled.text:
+                break
+            time.sleep(0.05)
+        assert "Sync completed. Run ID: 1" in polled.text
+        assert 'hx-trigger="every 2s"' not in polled.text
+        # The result is reported once, then cleared.
+        assert "Sync completed" not in client.get("/status-content").text
+
+
+def test_sync_now_while_running_polls_and_does_not_start_a_second_run(tmp_path):
+    config = make_config(tmp_path)
+    storage = Storage(config.database_path)
+    storage.init_db()
+    release = threading.Event()
+    calls: list[int] = []
+
+    async def slow_sync() -> list[int]:
+        calls.append(1)
+        while not release.is_set():
+            await asyncio.sleep(0.01)
+        return [7]
+
+    with make_client(config, storage) as client:
+        client.app.state.runtime.scheduler.trigger_now = slow_sync
+        first = client.post("/sync-now", headers=valid_headers(client))
+        second = client.post("/sync-now", headers=valid_headers(client))
+        release.set()
+
+    assert 'hx-trigger="every 2s"' in first.text
+    assert "disabled" in first.text
+    assert "A sync is already running." in second.text
+    assert len(calls) == 1
 
 
 def test_drift_page_renders_expandable_primary_and_follower_values(tmp_path):
@@ -646,3 +684,45 @@ def test_allowed_origins_referer_fallback(tmp_path, referer, origin, expected):
     if origin is not None:
         headers["Origin"] = origin
     assert client.post("/sync-now", headers=headers).status_code == expected
+
+
+def test_healthz_reports_stale_when_no_recent_sync(tmp_path):
+    from datetime import UTC, datetime, timedelta
+
+    config = make_config(tmp_path)
+    storage = Storage(config.database_path)
+    storage.init_db()
+    old = (datetime.now(UTC) - timedelta(minutes=30)).isoformat()
+    storage.record_run(follower="follower-a", status="in_sync", started_at=old, finished_at=old)
+    client = make_client(config, storage)
+    client.app.state.runtime.started_at = datetime.now(UTC) - timedelta(hours=1)
+
+    response = client.get("/healthz")
+
+    assert response.status_code == 503
+    assert response.json()["status"] == "stale"
+
+
+def test_run_snapshot_endpoint(tmp_path):
+    config = make_config(tmp_path)
+    storage = Storage(config.database_path)
+    storage.init_db()
+    run_id = storage.record_run(follower="follower-a", status="drift_corrected")
+    storage.record_snapshot(run_id, "follower-a", {"user_rules": ["a"]})
+    client = make_client(config, storage)
+
+    assert client.get(f"/api/runs/{run_id}/snapshot").json() == {"user_rules": ["a"]}
+    assert client.get("/api/runs/999/snapshot").status_code == 404
+
+
+def test_repeated_failed_logins_are_throttled_then_valid_login_still_blocked(tmp_path):
+    from app.web.routes import AUTH_MAX_FAILURES
+
+    client = _auth_client(tmp_path)
+    for _ in range(AUTH_MAX_FAILURES):
+        assert client.get("/api/status", auth=("admin", "wrong")).status_code == 401
+
+    blocked = client.get("/api/status", auth=("admin", "s3cret"))
+
+    assert blocked.status_code == 429
+    assert "Retry-After" in blocked.headers

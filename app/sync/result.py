@@ -7,6 +7,7 @@ from typing import Any
 
 class Domain(StrEnum):
     BLOCKLISTS = "blocklists"
+    FILTER_INTERVAL = "filter_interval"
     ALLOWLISTS = "allowlists"
     USER_RULES = "user_rules"
     REWRITES = "rewrites"

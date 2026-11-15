@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.storage import Storage
@@ -19,12 +21,14 @@ class SyncScheduler:
         self.storage = storage
         self.history_retention_days = history_retention_days
         self.scheduler = AsyncIOScheduler()
+        # Serialises scheduled and manual runs so two never write to a follower at once.
+        self._run_lock = asyncio.Lock()
 
     def start(self) -> None:
         if self.scheduler.running:
             return
         self.scheduler.add_job(
-            self.engine.run_once,
+            self._run_locked,
             "interval",
             minutes=self.interval_minutes,
             id="adguard-sync",
@@ -47,8 +51,12 @@ class SyncScheduler:
         if self.scheduler.running:
             self.scheduler.shutdown(wait=False)
 
+    async def _run_locked(self) -> list[int]:
+        async with self._run_lock:
+            return await self.engine.run_once()
+
     async def trigger_now(self) -> list[int]:
-        return await self.engine.run_once()
+        return await self._run_locked()
 
     def purge_history(self) -> int:
         return self.storage.purge_history_older_than(self.history_retention_days)
@@ -70,6 +78,3 @@ class SyncScheduler:
         self.engine = engine
         self.history_retention_days = history_retention_days
         self.reschedule(interval_minutes)
-        job = self.scheduler.get_job("adguard-sync")
-        if job:
-            job.modify(func=self.engine.run_once)

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import httpx
 import pytest
 import respx
@@ -234,3 +236,26 @@ async def test_non_2xx_raises_typed_error(host_config):
         with pytest.raises(AdGuardApiError):
             await client.add_filter("https://example/list.txt", "Example", whitelist=False)
         await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_set_filtering_interval_sends_enabled_to_avoid_disabling_filtering(host_config):
+    with respx.mock(base_url="http://adguard.local") as router:
+        route = router.post("/control/filtering/config").mock(return_value=httpx.Response(200))
+        async with AdGuardClient(host_config) as client:
+            await client.set_filtering_interval(12, enabled=True)
+
+    assert json.loads(route.calls[0].request.content) == {"enabled": True, "interval": 12}
+
+
+@pytest.mark.asyncio
+async def test_update_rewrite_sends_target_and_update_bodies(host_config):
+    with respx.mock(base_url="http://adguard.local") as router:
+        route = router.put("/control/rewrite/update").mock(return_value=httpx.Response(200))
+        async with AdGuardClient(host_config) as client:
+            await client.update_rewrite("a.lan", "1.1.1.1", enabled=False)
+
+    assert json.loads(route.calls[0].request.content) == {
+        "target": {"domain": "a.lan", "answer": "1.1.1.1"},
+        "update": {"domain": "a.lan", "answer": "1.1.1.1", "enabled": False},
+    }

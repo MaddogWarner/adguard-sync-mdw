@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import json
+import logging
 import secrets
+import time
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, NoReturn
 from urllib.parse import parse_qs
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
 
@@ -21,17 +25,43 @@ from app.storage import Storage
 
 templates = Jinja2Templates(directory="app/web/templates")
 templates.env.globals["app_version"] = __version__
+logger = logging.getLogger(__name__)
 security = HTTPBasic(auto_error=False)
 MAX_FORM_BYTES = 64 * 1024
 
 
+AUTH_MAX_FAILURES = 10
+AUTH_WINDOW_SECONDS = 300
+
+
 def auth_dependency(runtime: AppRuntime):
+    # Failed-login timestamps per client address (in memory, resets on restart). Behind a
+    # reverse proxy every client shares the proxy's address, so throttling applies to all.
+    failures: dict[str, list[float]] = {}
+
+    def recent_failures(client: str) -> list[float]:
+        cutoff = time.monotonic() - AUTH_WINDOW_SECONDS
+        recent = [stamp for stamp in failures.get(client, []) if stamp > cutoff]
+        if recent:
+            failures[client] = recent
+        else:
+            failures.pop(client, None)
+        return recent
+
     async def verify(
+        request: Request,
         credentials: Annotated[HTTPBasicCredentials | None, Depends(security)],
     ) -> None:
         config = runtime.config
         if not config.dashboard_user and not config.dashboard_password:
             return
+        client = request.client.host if request.client else "unknown"
+        if len(recent_failures(client)) >= AUTH_MAX_FAILURES:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many failed attempts. Try again later.",
+                headers={"Retry-After": str(AUTH_WINDOW_SECONDS)},
+            )
         if credentials is None:
             raise_auth()
         expected_password = (
@@ -45,6 +75,7 @@ def auth_dependency(runtime: AppRuntime):
             credentials.password.encode(), expected_password.encode()
         )
         if not (user_ok and password_ok):
+            failures.setdefault(client, []).append(time.monotonic())
             raise_auth()
 
     return verify
@@ -145,8 +176,10 @@ def status_context(
     config: AppConfig,
     storage: Storage,
     sync_message: str | None = None,
+    sync_running: bool = False,
 ) -> dict[str, Any]:
     return {
+        "sync_running": sync_running,
         "dry_run": config.dry_run,
         "host_health": configured_host_health(config, storage),
         "runs": storage.latest_run_per_follower(),
@@ -275,7 +308,15 @@ def create_router(*, runtime: AppRuntime) -> APIRouter:
     post_protected = [Depends(validate_post), *protected]
 
     @router.get("/healthz")
-    async def healthz() -> dict[str, str]:
+    async def healthz() -> Any:
+        # Unhealthy when no sync run has been recorded for 3 intervals: the scheduler is
+        # stuck or dead. Unreachable hosts are not a health failure (they are recorded runs).
+        last = runtime.started_at
+        for run in runtime.storage.latest_run_per_follower():
+            finished = datetime.fromisoformat(run["finished_at"] or run["started_at"])
+            last = max(last, finished)
+        if datetime.now(UTC) - last > timedelta(minutes=3 * runtime.config.interval_minutes):
+            return JSONResponse({"status": "stale", "last_activity": last.isoformat()}, 503)
         return {"status": "ok"}
 
     @router.get("/", response_class=HTMLResponse, dependencies=protected)
@@ -286,14 +327,41 @@ def create_router(*, runtime: AppRuntime) -> APIRouter:
             status_context(runtime.config, runtime.storage),
         )
 
-    @router.post("/sync-now", response_class=HTMLResponse, dependencies=post_protected)
-    async def sync_now(request: Request) -> Any:
-        run_ids = await runtime.scheduler.trigger_now()
+    def sync_state() -> tuple[bool, str | None]:
+        """(running, message) for the dashboard-started run; clears it once reported."""
+        task = runtime.sync_task
+        if task is None:
+            return False, None
+        if not task.done():
+            return True, "Sync running…"
+        runtime.sync_task = None
+        if task.cancelled():
+            return False, "Sync was cancelled."
+        if task.exception() is not None:
+            logger.error("dashboard_sync_failed", exc_info=task.exception())
+            return False, "Sync failed. See the container logs."
+        return False, _sync_message(task.result())
+
+    def render_status(request: Request, notice: str | None = None) -> Any:
+        running, message = sync_state()
         return render(
             request,
             "status_content.html",
-            status_context(runtime.config, runtime.storage, _sync_message(run_ids)),
+            status_context(runtime.config, runtime.storage, notice or message, running),
         )
+
+    @router.post("/sync-now", response_class=HTMLResponse, dependencies=post_protected)
+    async def sync_now(request: Request) -> Any:
+        # Run in the background and let the page poll /status-content, so the request
+        # does not hold open while several followers sync.
+        if runtime.sync_task is not None and not runtime.sync_task.done():
+            return render_status(request, "A sync is already running.")
+        runtime.sync_task = asyncio.create_task(runtime.scheduler.trigger_now())
+        return render_status(request)
+
+    @router.get("/status-content", response_class=HTMLResponse, dependencies=protected)
+    async def status_content(request: Request) -> Any:
+        return render_status(request)
 
     @router.get("/settings", response_class=HTMLResponse, dependencies=protected)
     async def settings_page(request: Request) -> Any:
@@ -369,6 +437,13 @@ def create_router(*, runtime: AppRuntime) -> APIRouter:
     @router.get("/api/runs", dependencies=protected)
     async def api_runs() -> list[dict[str, Any]]:
         return runtime.storage.recent_runs()
+
+    @router.get("/api/runs/{run_id}/snapshot", dependencies=protected)
+    async def api_run_snapshot(run_id: int) -> dict[str, Any]:
+        snapshot = runtime.storage.get_snapshot(run_id)
+        if snapshot is None:
+            raise HTTPException(status_code=404, detail="No pre-apply snapshot for this run")
+        return snapshot
 
     @router.get("/api/drift", dependencies=protected)
     async def api_drift() -> list[dict[str, Any]]:

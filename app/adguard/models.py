@@ -19,6 +19,8 @@ class Rewrite(BaseModel):
 
     domain: str
     answer: str
+    # None: the host's AdGuard version (< v0.107.68) does not report an enabled flag.
+    enabled: bool | None = None
 
 
 class UpstreamDnsConfig(BaseModel):
@@ -103,6 +105,7 @@ class FilteringStatus(BaseModel):
     whitelist_filters: list[Filter] = Field(default_factory=list)
     user_rules: list[str] = Field(default_factory=list)
     interval: int | None = None
+    enabled: bool | None = None
 
     @field_validator("filters", "whitelist_filters", "user_rules", mode="before")
     @classmethod
@@ -117,6 +120,8 @@ class HostSnapshot(BaseModel):
     blocklists: list[Filter] = Field(default_factory=list)
     allowlists: list[Filter] = Field(default_factory=list)
     user_rules: list[str] = Field(default_factory=list)
+    filter_interval: int | None = None
+    filtering_enabled: bool | None = None
     rewrites: list[Rewrite] = Field(default_factory=list)
     upstream: UpstreamDnsConfig = Field(default_factory=UpstreamDnsConfig)
     blocked_services: BlockedServices = Field(default_factory=BlockedServices)

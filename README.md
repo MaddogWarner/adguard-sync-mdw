@@ -42,6 +42,7 @@ The header toggle switches between light and dark themes (it follows your system
 - DNS rewrites
 - Managed upstream DNS fields: `upstream_dns`, `bootstrap_dns`, `fallback_dns`, `upstream_mode`
 - Blocked services (the blocked-service IDs and their schedule)
+- Filter update interval (with block lists; the follower's own filtering on/off setting is kept)
 - DNS settings, opt-in (`scope.dns_settings`): `ratelimit`, `ratelimit_subnet_len_ipv4`, `ratelimit_subnet_len_ipv6`, `ratelimit_whitelist`, `dnssec_enabled`, `cache_enabled`, `cache_size`, `cache_ttl_min`, `cache_ttl_max`, `cache_optimistic`
 - Query log settings, opt-in (`scope.querylog`): `enabled`, `interval`, `anonymize_client_ip`, `ignored`, `ignored_enabled`
 
@@ -144,12 +145,15 @@ The dashboard Settings page can edit the app-managed `config.yaml` and apply nor
 | `database_path` | SQLite path. Defaults to `/data/adguard-sync.db`. |
 | `history_retention_days` | Number of days to retain sync history before purging related run, change, and drift rows. Defaults to `14`. |
 | `log_level` | JSON stdout log level. |
+| `max_prune_percent` | Prune guard, `1`-`100` (default `50`). If a run would remove more than this share of a follower's block lists, allowlists or rewrites (and at least 3 items), those removals are skipped and the run is marked `partial`. `100` disables it. Not editable from the Settings page; preserved on save. |
+| `notifications.webhook_url` | Optional alert webhook. Keep it in `.env` and reference it as `${ALERT_WEBHOOK_URL}`. Preserved on Settings save. |
+| `notifications.format` | `json` (default; includes Slack/Discord-compatible `text`/`content`) or `ntfy` (plain text with Title/Priority/Tags headers). |
 | `tls.enabled` | Serve the dashboard over HTTPS. Defaults to `true`. |
 | `tls.cert_file` / `tls.key_file` | Optional PEM cert and key. When unset, a self-signed pair is generated. Must be set together. |
 | `primary` | Source AdGuard Home host. |
 | `followers` | One or more destination hosts. |
 | `scope.*.enabled` | Enables a sync domain. |
-| `scope.*.prune` | Removes follower-only items where applicable. |
+| `scope.*.prune` | Removes follower-only items where applicable. For `user_rules`, `false` adds missing primary rules and keeps follower-only rules; `true` makes the follower an exact mirror. |
 
 Host fields are `name`, `url`, `username`, `password`, and `verify_ssl`.
 
@@ -161,9 +165,10 @@ password: ${ADGUARD_PRIMARY_PASSWORD}
 
 ## API
 
-- `GET /healthz`
+- `GET /healthz` (503 if no sync has run for 3 intervals)
 - `GET /api/status`
 - `GET /api/runs`
+- `GET /api/runs/{id}/snapshot` (follower state before that run's changes were applied; 404 if none)
 - `GET /api/drift`
 - `POST /api/sync`
 
@@ -176,6 +181,8 @@ Dashboard pages are `/`, `/drift`, `/history`, and `/settings`.
 - Only set `verify_ssl: false` for controlled testing or trusted internal certificates with a documented exception.
 - Configure dashboard Basic Auth via `DASHBOARD_USER` and `DASHBOARD_PASSWORD`.
 - Logs are structured JSON and must not include secrets.
+- Failed dashboard logins are throttled per client address (10 in 5 minutes, then HTTP 429). Behind a reverse proxy all clients share the proxy's address.
+- Alerts fire on state changes only (host down/up, sync partial/failed/recovered), not on every interval.
 
 ## Operational Notes
 

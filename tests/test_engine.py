@@ -294,3 +294,99 @@ async def test_engine_dry_run_skips_dns_settings_and_querylog_writes(tmp_path):
     assert storage.latest_run_per_follower()[0]["status"] == "drift_detected"
     assert not dns.called
     assert not querylog.called
+
+
+def _changes(storage: Storage) -> list[tuple[str, str, str, str]]:
+    with storage._connect() as conn:
+        rows = conn.execute("SELECT domain, op, target, outcome FROM changes ORDER BY id")
+        return [tuple(row) for row in rows]
+
+
+def _filters(count: int) -> list[dict[str, object]]:
+    return [
+        {"url": f"https://f.test/{i}.txt", "name": f"F{i}", "enabled": True} for i in range(count)
+    ]
+
+
+@pytest.mark.asyncio
+async def test_prune_guard_blocks_mass_removal_when_primary_is_empty(tmp_path):
+    config = make_config(tmp_path)
+    storage = Storage(config.database_path)
+    storage.init_db()
+    engine = make_engine(config, storage)
+    with respx.mock(assert_all_called=False) as router:
+        mock_snapshot(router, "http://primary.local", filters=[])
+        mock_snapshot(router, "http://follower-a.local", filters=_filters(10))
+        remove = router.post("http://follower-a.local/control/filtering/remove_url").mock(
+            return_value=httpx.Response(200)
+        )
+
+        await engine.run_once()
+    await close_engine(engine)
+
+    latest = storage.latest_run_per_follower()[0]
+    assert not remove.called
+    assert latest["status"] == "partial"
+    assert "prune guard" in latest["error"]
+    assert latest["removed"] == 0
+    assert {c[3] for c in _changes(storage)} == {"skipped(prune_guard)"}
+    assert storage.current_drift()  # drift is still reported
+
+
+@pytest.mark.asyncio
+async def test_prune_guard_allows_small_removals_and_can_be_disabled(tmp_path):
+    config = make_config(tmp_path)
+    storage = Storage(config.database_path)
+    storage.init_db()
+    engine = make_engine(config, storage)
+    with respx.mock as router:
+        mock_snapshot(router, "http://primary.local", filters=_filters(8))
+        mock_snapshot(router, "http://follower-a.local", filters=_filters(10))
+        remove = router.post("http://follower-a.local/control/filtering/remove_url").mock(
+            return_value=httpx.Response(200)
+        )
+        router.post("http://follower-a.local/control/filtering/refresh").mock(
+            return_value=httpx.Response(200)
+        )
+        await engine.run_once()  # 2 removals: under the minimum, applied
+        assert remove.call_count == 2
+
+    config.max_prune_percent = 100
+    with respx.mock as router:
+        mock_snapshot(router, "http://primary.local", filters=[])
+        mock_snapshot(router, "http://follower-a.local", filters=_filters(10))
+        remove = router.post("http://follower-a.local/control/filtering/remove_url").mock(
+            return_value=httpx.Response(200)
+        )
+        router.post("http://follower-a.local/control/filtering/refresh").mock(
+            return_value=httpx.Response(200)
+        )
+        await engine.run_once()
+        assert remove.call_count == 10
+    await close_engine(engine)
+
+
+@pytest.mark.asyncio
+async def test_failed_action_does_not_stop_remaining_actions(tmp_path):
+    config = make_config(tmp_path)
+    storage = Storage(config.database_path)
+    storage.init_db()
+    engine = make_engine(config, storage)
+    with respx.mock as router:
+        mock_snapshot(router, "http://primary.local", filters=_filters(2))
+        mock_snapshot(router, "http://follower-a.local")
+        add = router.post("http://follower-a.local/control/filtering/add_url").mock(
+            side_effect=[httpx.Response(500, text="boom"), httpx.Response(200)]
+        )
+        router.post("http://follower-a.local/control/filtering/refresh").mock(
+            return_value=httpx.Response(200)
+        )
+        await engine.run_once()
+    await close_engine(engine)
+
+    assert add.call_count == 2
+    latest = storage.latest_run_per_follower()[0]
+    assert latest["status"] == "partial"
+    assert latest["added"] == 1
+    assert "failed with HTTP 500" in latest["error"]
+    assert sorted(c[3] for c in _changes(storage)) == ["failed", "success"]

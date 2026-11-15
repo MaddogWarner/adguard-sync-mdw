@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlparse
 
 import yaml
@@ -42,6 +42,22 @@ class TlsConfig(BaseModel):
     key_file: str | None = None
 
 
+class NotificationsConfig(BaseModel):
+    # The URL often embeds a secret token, so keep it in .env and reference it as ${VAR}.
+    webhook_url: SecretStr | None = None
+    format: Literal["json", "ntfy"] = "json"
+
+    @field_validator("webhook_url")
+    @classmethod
+    def validate_webhook_url(cls, value: SecretStr | None) -> SecretStr | None:
+        if value is None or not value.get_secret_value().strip():
+            return None
+        parsed = urlparse(value.get_secret_value())
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("notifications.webhook_url must use http or https")
+        return value
+
+
 class ScopeItem(BaseModel):
     enabled: bool = True
     prune: bool = True
@@ -65,6 +81,7 @@ class AppConfig(BaseModel):
     dry_run: bool = True
     tls: TlsConfig = Field(default_factory=TlsConfig)
     scope: ScopeConfig = Field(default_factory=ScopeConfig)
+    notifications: NotificationsConfig = Field(default_factory=NotificationsConfig)
     primary: HostConfig
     followers: list[HostConfig]
     dashboard_user: str | None = None
@@ -72,6 +89,8 @@ class AppConfig(BaseModel):
     dashboard_allowed_origins: list[str] = Field(default_factory=list)
     database_path: str = "/data/adguard-sync.db"
     history_retention_days: int = 14
+    # Prune guard: skip a domain's removals if they exceed this share of the follower's items.
+    max_prune_percent: int = 50
     log_level: str = "INFO"
 
     @field_validator("dashboard_allowed_origins")
@@ -94,6 +113,13 @@ class AppConfig(BaseModel):
     def validate_history_retention(cls, value: int) -> int:
         if value < 1:
             raise ValueError("history_retention_days must be at least 1")
+        return value
+
+    @field_validator("max_prune_percent")
+    @classmethod
+    def validate_max_prune_percent(cls, value: int) -> int:
+        if not 1 <= value <= 100:
+            raise ValueError("max_prune_percent must be between 1 and 100 (100 disables the guard)")
         return value
 
     @model_validator(mode="after")
