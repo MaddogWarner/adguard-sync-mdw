@@ -12,6 +12,7 @@ from app.config import ScopeConfig, ScopeItem
 from app.sync.differ import (
     diff_blocked_services,
     diff_dns_settings,
+    diff_filter_interval,
     diff_filters,
     diff_host,
     diff_querylog,
@@ -64,14 +65,14 @@ def test_diff_filters_noop():
 
 
 def test_diff_user_rules_replace_when_order_differs():
-    result = diff_user_rules(["a", "b"], ["b", "a"])
+    result = diff_user_rules(["a", "b"], ["b", "a"], prune=True)
 
     assert result.actions[0].op == Op.REPLACE
     assert result.drift[0].target == "user_rules"
 
 
 def test_diff_user_rules_noop():
-    result = diff_user_rules(["a"], ["a"])
+    result = diff_user_rules(["a"], ["a"], prune=True)
 
     assert result.actions == []
     assert result.drift == []
@@ -225,3 +226,63 @@ def test_diff_host_skips_new_scopes_by_default_and_when_unsupported():
     assert Domain.QUERYLOG not in default_domains
     assert Domain.DNS_SETTINGS in enabled_domains
     assert Domain.QUERYLOG not in enabled_domains
+
+
+def test_user_rules_prune_off_adds_missing_and_keeps_follower_only_rules():
+    result = diff_user_rules(["a", "b"], ["x", "a"], prune=False)
+
+    assert result.actions[0].op == Op.REPLACE
+    assert result.actions[0].detail["rules"] == ["a", "b", "x"]
+    assert result.drift
+
+
+def test_user_rules_prune_off_follower_only_extras_is_drift_without_action():
+    result = diff_user_rules(["a"], ["a", "x"], prune=False)
+
+    assert result.actions == []
+    assert result.drift
+
+
+def test_user_rules_prune_off_ignores_order_only_difference():
+    result = diff_user_rules(["a", "b"], ["b", "a"], prune=False)
+
+    assert result.actions == []
+    assert result.drift == []
+
+
+def test_user_rules_prune_on_removes_follower_only_rules():
+    result = diff_user_rules(["a"], ["a", "x"], prune=True)
+
+    assert result.actions[0].detail["rules"] == ["a"]
+
+
+def test_filter_interval_replaces_and_preserves_follower_enabled_flag():
+    primary = snapshot().model_copy(update={"filter_interval": 12, "filtering_enabled": True})
+    follower = snapshot().model_copy(update={"filter_interval": 24, "filtering_enabled": False})
+
+    result = diff_filter_interval(primary, follower)
+
+    assert result.actions[0].detail == {"interval": 12, "enabled": False}
+    assert result.drift[0].primary_value == 12
+
+
+def test_filter_interval_skipped_when_unreported_or_equal():
+    reported = snapshot().model_copy(update={"filter_interval": 12, "filtering_enabled": True})
+    unreported = snapshot()
+
+    assert diff_filter_interval(reported, unreported).actions == []
+    assert diff_filter_interval(unreported, reported).actions == []
+    assert diff_filter_interval(reported, reported).actions == []
+
+
+def test_diff_rewrites_syncs_enabled_flag_only_when_both_hosts_report_it():
+    primary = [Rewrite(domain="a.lan", answer="1.1.1.1", enabled=False)]
+
+    changed = diff_rewrites(
+        primary, [Rewrite(domain="a.lan", answer="1.1.1.1", enabled=True)], prune=True
+    )
+    legacy = diff_rewrites(primary, [Rewrite(domain="a.lan", answer="1.1.1.1")], prune=True)
+
+    assert changed.actions[0].op == Op.UPDATE
+    assert changed.actions[0].detail["enabled"] is False
+    assert legacy.actions == []

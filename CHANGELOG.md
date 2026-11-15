@@ -2,6 +2,43 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.0] - 15/11/2026
+
+### Changed
+
+- **User rules now honour `prune`.** With `prune: false` (the default) missing primary
+  rules are added and follower-only rules are kept; with `prune: true` the follower
+  is an exact mirror, as before.
+- Sync runs are serialised: a manual "Sync now" waits for a running scheduled sync
+  instead of writing to followers concurrently. Followers sync up to 3 at a time.
+- A failed change no longer stops the rest of a run. Each change records its own
+  outcome (`success` / `failed`), and the run is marked `partial` with the errors.
+- `/healthz` returns 503 when no sync run has been recorded for 3 intervals, so the
+  container healthcheck catches a stuck scheduler.
+- Dashboard "Sync now" runs in the background and the page polls for the result, instead of holding the request open. `POST /api/sync` is unchanged (blocking).
+- SQLite connections are now closed after each operation.
+- Dashboard login is throttled after 10 failed attempts in 5 minutes (HTTP 429).
+
+### Added
+
+- Prune guard (`max_prune_percent`, default 50): if a run would remove more than
+  this share of a follower's block lists, allowlists or rewrites (3 or more
+  removals), those removals are skipped and the run is marked `partial`. Protects
+  against an empty or truncated primary response wiping followers. `100` disables it.
+- Optional alerts (`notifications.webhook_url`, `format: json|ntfy`) on state changes:
+  host down/up and sync partial/failed/recovered.
+- Pre-apply follower snapshot stored for each run that wrote changes, readable at
+  `GET /api/runs/{id}/snapshot` (purged with run history).
+- Filter update interval is mirrored with the blocklists scope. The follower's own
+  filtering enabled flag is preserved.
+- DNS rewrite `enabled` flag is mirrored on AdGuard Home v0.107.68+ (skipped on older hosts).
+- Opt-in `dns_settings` scope: syncs rate limit, rate-limit subnet lengths and
+  whitelist, DNSSEC, and cache settings from the primary. Only changed fields are
+  sent, and fields a host's AdGuard version does not report are skipped.
+- Opt-in `querylog` scope: syncs query log enabled, retention interval, client IP
+  anonymisation and ignored domains. Skipped on hosts without the
+  `querylog/config` endpoints.
+
 ## [1.2.3] - 10/10/2026
 
 ### Security
@@ -11,17 +48,6 @@ Dashboard requests are now validated for origin and CSRF token, and stored host 
 ### Added
 
 - Optional `DASHBOARD_ALLOWED_ORIGINS` lists exact dashboard origins and requires a matching Host, supporting reverse proxies that terminate TLS and restricting accepted dashboard POST hosts. Unset deployments retain the existing origin check.
-
-## [Unreleased]
-
-### Added
-
-- Opt-in `dns_settings` scope: syncs rate limit, rate-limit subnet lengths and
-  whitelist, DNSSEC, and cache settings from the primary. Only changed fields are
-  sent, and fields a host's AdGuard version does not report are skipped.
-- Opt-in `querylog` scope: syncs query log enabled, retention interval, client IP
-  anonymisation and ignored domains. Skipped on hosts without the
-  `querylog/config` endpoints.
 
 ## [1.2.2] - 2026-08-24
 

@@ -75,14 +75,43 @@ def diff_filters(
     return result
 
 
-def diff_user_rules(primary: list[str], follower: list[str]) -> DomainResult:
-    result = DomainResult(Domain.USER_RULES)
-    if primary != follower:
-        result.actions.append(
-            ChangeAction(Domain.USER_RULES, Op.REPLACE, "user_rules", {"rules": primary})
+def diff_filter_interval(primary: HostSnapshot, follower: HostSnapshot) -> DomainResult:
+    """Mirror the filter update interval; the follower's own enabled flag is preserved."""
+    result = DomainResult(Domain.FILTER_INTERVAL)
+    p, f = primary.filter_interval, follower.filter_interval
+    if p is None or f is None or follower.filtering_enabled is None or p == f:
+        return result
+    result.actions.append(
+        ChangeAction(
+            Domain.FILTER_INTERVAL,
+            Op.REPLACE,
+            "filter_interval",
+            {"interval": p, "enabled": follower.filtering_enabled},
         )
+    )
+    result.drift.append(DriftItem(Domain.FILTER_INTERVAL, "changed", "filter_interval", p, f))
+    return result
+
+
+def diff_user_rules(primary: list[str], follower: list[str], *, prune: bool) -> DomainResult:
+    """prune on: exact mirror. prune off: add missing primary rules, keep follower-only ones."""
+    result = DomainResult(Domain.USER_RULES)
+    primary_set, follower_set = set(primary), set(follower)
+    missing = [rule for rule in primary if rule not in follower_set]
+    extras = [rule for rule in follower if rule not in primary_set]
+    if prune:
+        needs_action = primary != follower
+        desired = primary
+    else:
+        needs_action = bool(missing)
+        desired = [*primary, *extras]
+    if primary != follower and (needs_action or extras):
         result.drift.append(
             DriftItem(Domain.USER_RULES, "changed", "user_rules", primary, follower)
+        )
+    if needs_action:
+        result.actions.append(
+            ChangeAction(Domain.USER_RULES, Op.REPLACE, "user_rules", {"rules": desired})
         )
     return result
 
@@ -99,9 +128,36 @@ def diff_rewrites(primary: list[Rewrite], follower: list[Rewrite], *, prune: boo
     for key, primary_item in primary_by_key.items():
         target = " -> ".join(key)
         if key not in follower_by_key:
-            detail = {"domain": primary_item.domain, "answer": primary_item.answer}
+            detail: dict[str, object] = {
+                "domain": primary_item.domain,
+                "answer": primary_item.answer,
+            }
+            if primary_item.enabled is not None:
+                detail["enabled"] = primary_item.enabled
             result.actions.append(ChangeAction(Domain.REWRITES, Op.ADD, target, detail))
             result.drift.append(DriftItem(Domain.REWRITES, "missing", target, detail, None))
+        else:
+            follower_enabled = follower_by_key[key].enabled
+            if (
+                primary_item.enabled is not None
+                and follower_enabled is not None
+                and primary_item.enabled != follower_enabled
+            ):
+                detail = {
+                    "domain": primary_item.domain,
+                    "answer": primary_item.answer,
+                    "enabled": primary_item.enabled,
+                }
+                result.actions.append(ChangeAction(Domain.REWRITES, Op.UPDATE, target, detail))
+                result.drift.append(
+                    DriftItem(
+                        Domain.REWRITES,
+                        "changed",
+                        target,
+                        detail,
+                        {**detail, "enabled": follower_enabled},
+                    )
+                )
 
     for key, follower_item in follower_by_key.items():
         target = " -> ".join(key)
@@ -228,6 +284,7 @@ def diff_host(
                 prune=scope.blocklists.prune,
             )
         )
+        results.append(diff_filter_interval(primary_snapshot, follower_snapshot))
     if scope.allowlists.enabled:
         results.append(
             diff_filters(
@@ -238,7 +295,13 @@ def diff_host(
             )
         )
     if scope.user_rules.enabled:
-        results.append(diff_user_rules(primary_snapshot.user_rules, follower_snapshot.user_rules))
+        results.append(
+            diff_user_rules(
+                primary_snapshot.user_rules,
+                follower_snapshot.user_rules,
+                prune=scope.user_rules.prune,
+            )
+        )
     if scope.rewrites.enabled:
         results.append(
             diff_rewrites(

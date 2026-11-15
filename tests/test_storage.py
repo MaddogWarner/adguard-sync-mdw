@@ -143,3 +143,15 @@ def test_latest_run_per_follower_returns_newest(tmp_path):
 
     assert {row["follower"] for row in latest} == {"follower-a", "follower-b"}
     assert next(row for row in latest if row["follower"] == "follower-a")["id"] == latest_id
+
+
+def test_snapshot_round_trip_and_cascade_delete(tmp_path):
+    storage = Storage(tmp_path / "s.db")
+    storage.init_db()
+    run_id = storage.record_run(follower="f", status="drift_corrected")
+    storage.record_snapshot(run_id, "f", {"user_rules": ["a"]})
+
+    assert storage.get_snapshot(run_id) == {"user_rules": ["a"]}
+    assert storage.get_snapshot(run_id + 1) is None
+    storage.purge_history_older_than(1, now=datetime(2100, 1, 1, tzinfo=UTC))
+    assert storage.get_snapshot(run_id) is None

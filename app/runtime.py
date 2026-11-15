@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from app.adguard.client import AdGuardClient
 from app.config import AppConfig
 from app.config_manager import ConfigManager
+from app.notify import Notifier
 from app.scheduler import SyncScheduler
 from app.storage import Storage
 from app.sync.engine import SyncEngine
@@ -39,6 +42,9 @@ class AppRuntime:
         self.engine = engine
         self.scheduler = scheduler
         self.config_manager = config_manager
+        self.started_at = datetime.now(UTC)
+        # Background run started from the dashboard; held so it is not garbage collected.
+        self.sync_task: asyncio.Task[list[int]] | None = None
 
     @classmethod
     def build(cls, config: AppConfig, config_manager: ConfigManager) -> AppRuntime:
@@ -46,7 +52,7 @@ class AppRuntime:
         storage.init_db()
         storage.purge_history_older_than(config.history_retention_days)
         clients = build_clients(config)
-        engine = SyncEngine(config, storage, clients)
+        engine = SyncEngine(config, storage, clients, Notifier(config.notifications))
         scheduler = SyncScheduler(
             engine,
             config.interval_minutes,
@@ -73,7 +79,7 @@ class AppRuntime:
     async def apply_config(self, config: AppConfig) -> RuntimeReloadResult:
         old_clients = self.clients
         new_clients = build_clients(config)
-        new_engine = SyncEngine(config, self.storage, new_clients)
+        new_engine = SyncEngine(config, self.storage, new_clients, Notifier(config.notifications))
 
         self.config = config
         self.clients = new_clients

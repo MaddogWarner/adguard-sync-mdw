@@ -284,7 +284,13 @@ def raw_config_from_form(
             for key in SCOPE_KEYS
         },
     }
-    for key in ("dashboard_user", "dashboard_password", "dashboard_allowed_origins"):
+    for key in (
+        "dashboard_user",
+        "dashboard_password",
+        "dashboard_allowed_origins",
+        "max_prune_percent",
+        "notifications",
+    ):
         if key in existing_raw:
             raw[key] = existing_raw[key]
     dashboard_user = _form_text(form, "dashboard_user")

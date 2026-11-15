@@ -138,6 +138,8 @@ class AdGuardClient:
             blocklists=filtering.filters,
             allowlists=filtering.whitelist_filters,
             user_rules=filtering.user_rules,
+            filter_interval=filtering.interval,
+            filtering_enabled=filtering.enabled,
             rewrites=rewrites,
             upstream=upstream,
             blocked_services=blocked_services,
@@ -171,11 +173,26 @@ class AdGuardClient:
     async def set_user_rules(self, rules: list[str]) -> None:
         await self._post("/control/filtering/set_rules", {"rules": rules})
 
-    async def set_filtering_interval(self, interval: int) -> None:
-        await self._post("/control/filtering/config", {"interval": interval})
+    async def set_filtering_interval(self, interval: int, *, enabled: bool) -> None:
+        # The endpoint sets both fields; omitting "enabled" would switch filtering off,
+        # so callers must pass the host's current value.
+        await self._post("/control/filtering/config", {"enabled": enabled, "interval": interval})
 
-    async def add_rewrite(self, domain: str, answer: str) -> None:
-        await self._post("/control/rewrite/add", {"domain": domain, "answer": answer})
+    async def add_rewrite(self, domain: str, answer: str, enabled: bool | None = None) -> None:
+        payload: dict[str, Any] = {"domain": domain, "answer": answer}
+        if enabled is not None:
+            payload["enabled"] = enabled
+        await self._post("/control/rewrite/add", payload)
+
+    async def update_rewrite(self, domain: str, answer: str, *, enabled: bool) -> None:
+        # PUT /rewrite/update (AdGuard Home v0.107.30+; "enabled" needs v0.107.68+).
+        await self._put(
+            "/control/rewrite/update",
+            {
+                "target": {"domain": domain, "answer": answer},
+                "update": {"domain": domain, "answer": answer, "enabled": enabled},
+            },
+        )
 
     async def delete_rewrite(self, domain: str, answer: str) -> None:
         await self._post("/control/rewrite/delete", {"domain": domain, "answer": answer})

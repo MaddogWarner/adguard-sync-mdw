@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -19,13 +20,19 @@ class Storage:
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
+        """Commit on success, roll back on error, and always close the connection."""
         self.path.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(self.path)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON")
-        conn.execute("PRAGMA journal_mode = WAL")
-        return conn
+        try:
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA foreign_keys = ON")
+            conn.execute("PRAGMA journal_mode = WAL")
+            with conn:
+                yield conn
+        finally:
+            conn.close()
 
     def init_db(self) -> None:
         with self._connect() as conn:
@@ -68,6 +75,11 @@ class Storage:
                     status TEXT NOT NULL,
                     last_checked TEXT NOT NULL,
                     error TEXT
+                );
+                CREATE TABLE IF NOT EXISTS snapshots (
+                    run_id INTEGER PRIMARY KEY REFERENCES sync_runs(id) ON DELETE CASCADE,
+                    follower TEXT NOT NULL,
+                    data TEXT NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS idx_sync_runs_finished_at
                   ON sync_runs(finished_at);
@@ -114,6 +126,19 @@ class Storage:
                 """
             ).fetchall()
             return [dict(row) for row in rows]
+
+    def host_status(self, name: str) -> str | None:
+        with self._connect() as conn:
+            row = conn.execute("SELECT status FROM host_health WHERE name = ?", (name,)).fetchone()
+        return row["status"] if row else None
+
+    def latest_run_status(self, follower: str) -> str | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT status FROM sync_runs WHERE follower = ? ORDER BY id DESC LIMIT 1",
+                (follower,),
+            ).fetchone()
+        return row["status"] if row else None
 
     def record_run(
         self,
@@ -172,6 +197,19 @@ class Storage:
                     for change in changes
                 ],
             )
+
+    def record_snapshot(self, run_id: int, follower: str, data: dict[str, Any]) -> None:
+        """Store the follower's pre-apply state so a run's changes can be reviewed or reverted."""
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO snapshots (run_id, follower, data) VALUES (?, ?, ?)",
+                (run_id, follower, json.dumps(data, default=str, sort_keys=True)),
+            )
+
+    def get_snapshot(self, run_id: int) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute("SELECT data FROM snapshots WHERE run_id = ?", (run_id,)).fetchone()
+        return json.loads(row["data"]) if row else None
 
     def record_drift(self, run_id: int, follower: str, drift: Iterable[DriftItem]) -> None:
         with self._connect() as conn:

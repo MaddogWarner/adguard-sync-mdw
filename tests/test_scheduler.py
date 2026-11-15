@@ -50,3 +50,29 @@ def test_purge_history_invokes_storage_retention():
 
     assert scheduler.purge_history() == 3
     assert storage.retention_days == 14
+
+
+@pytest.mark.asyncio
+async def test_concurrent_triggers_are_serialised():
+    import asyncio
+
+    class SlowEngine:
+        def __init__(self) -> None:
+            self.active = 0
+            self.max_active = 0
+
+        async def run_once(self) -> list[int]:
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+            await asyncio.sleep(0.01)
+            self.active -= 1
+            return []
+
+    engine = SlowEngine()
+    scheduler = SyncScheduler(
+        engine, interval_minutes=5, storage=DummyStorage(), history_retention_days=14
+    )
+
+    await asyncio.gather(scheduler.trigger_now(), scheduler.trigger_now(), scheduler._run_locked())
+
+    assert engine.max_active == 1

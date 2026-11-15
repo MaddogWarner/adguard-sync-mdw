@@ -184,3 +184,14 @@ def test_yaml_allowed_origins_and_environment_override(tmp_path, monkeypatch):
     assert load_config(path).dashboard_allowed_origins == ["https://sync.example"]
     monkeypatch.setenv("DASHBOARD_ALLOWED_ORIGINS", "https://override.example")
     assert load_config(path).dashboard_allowed_origins == ["https://override.example"]
+
+
+@pytest.mark.parametrize("value", [0, 101])
+def test_max_prune_percent_out_of_range_rejected(tmp_path, value):
+    path = write_config(tmp_path, base_config() + f"\nmax_prune_percent: {value}\n")
+    with pytest.raises(ConfigError, match="max_prune_percent"):
+        load_config(path)
+
+
+def test_max_prune_percent_defaults_to_50(tmp_path):
+    assert load_config(write_config(tmp_path, base_config())).max_prune_percent == 50

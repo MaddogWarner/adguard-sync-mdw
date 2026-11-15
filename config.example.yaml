@@ -2,6 +2,10 @@ interval_minutes: 5
 dry_run: true
 database_path: /data/adguard-sync.db
 history_retention_days: 14
+# Safety guard: if a run would prune more than this % of a follower's block lists,
+# allowlists or rewrites, those removals are skipped and the run is marked partial.
+# Protects against a primary returning an empty list. 100 disables the guard.
+max_prune_percent: 50
 log_level: INFO
 
 # This file can be edited from the dashboard Settings page when it is mounted
@@ -58,3 +62,10 @@ scope:
   querylog:
     enabled: false
     prune: false
+
+# Optional alerts on state changes (host down/up, sync partial/failed/recovered).
+# The webhook URL often contains a secret token: keep it in .env, not here.
+# format: json (generic; also works with Slack/Discord) or ntfy (plain text + headers).
+# notifications:
+#   webhook_url: ${ALERT_WEBHOOK_URL}
+#   format: json
