@@ -6,9 +6,12 @@ from typing import Any
 import httpx
 
 from app.adguard.models import (
+    DNS_SETTINGS_FIELDS,
     BlockedServices,
+    DnsSettings,
     FilteringStatus,
     HostSnapshot,
+    QuerylogConfig,
     Rewrite,
     UpstreamDnsConfig,
 )
@@ -82,6 +85,13 @@ class AdGuardClient:
     async def get_dns_info(self) -> UpstreamDnsConfig:
         return UpstreamDnsConfig.model_validate(await self._get("/control/dns_info"))
 
+    async def get_dns_info_full(self) -> tuple[UpstreamDnsConfig, DnsSettings]:
+        data = await self._get("/control/dns_info")
+        return UpstreamDnsConfig.model_validate(data), DnsSettings.model_validate(data)
+
+    async def get_querylog_config(self) -> QuerylogConfig:
+        return QuerylogConfig.model_validate(await self._get("/control/querylog/config"))
+
     async def get_blocked_services(self) -> BlockedServices:
         return BlockedServices.model_validate(await self._get("/control/blocked_services/get"))
 
@@ -90,7 +100,7 @@ class AdGuardClient:
             status = await self.get_status()
             filtering = await self.get_filtering_status()
             rewrites = await self.get_rewrites()
-            upstream = await self.get_dns_info()
+            upstream, dns_settings = await self.get_dns_info_full()
         except (httpx.HTTPError, AdGuardApiError, ValueError) as exc:
             logger.warning(
                 "adguard_host_unreachable",
@@ -111,6 +121,18 @@ class AdGuardClient:
             blocked_services = BlockedServices()
             blocked_services_supported = False
 
+        # Same isolation for the query log config endpoint (newer AdGuard versions only).
+        try:
+            querylog = await self.get_querylog_config()
+            querylog_supported = True
+        except (httpx.HTTPError, AdGuardApiError, ValueError) as exc:
+            logger.info(
+                "querylog_config_unavailable",
+                extra={"host": self.config.name, "error": str(exc)},
+            )
+            querylog = QuerylogConfig()
+            querylog_supported = False
+
         return HostSnapshot(
             host=self.config.name,
             blocklists=filtering.filters,
@@ -120,6 +142,9 @@ class AdGuardClient:
             upstream=upstream,
             blocked_services=blocked_services,
             blocked_services_supported=blocked_services_supported,
+            dns_settings=dns_settings,
+            querylog=querylog,
+            querylog_supported=querylog_supported,
             version=status.get("version"),
             reachable=True,
         )
@@ -162,6 +187,16 @@ class AdGuardClient:
                 include={"upstream_dns", "bootstrap_dns", "fallback_dns", "upstream_mode"}
             ),
         )
+
+    async def set_dns_settings(self, settings: dict[str, Any]) -> None:
+        # dns_config is a partial merge: send only managed keys the differ chose to push.
+        unknown = set(settings) - set(DNS_SETTINGS_FIELDS)
+        if unknown:
+            raise ValueError(f"unmanaged dns settings: {sorted(unknown)}")
+        await self._post("/control/dns_config", settings)
+
+    async def set_querylog_config(self, cfg: QuerylogConfig) -> None:
+        await self._put("/control/querylog/config/update", cfg.model_dump(exclude_none=True))
 
     async def refresh_filters(self, *, whitelist: bool) -> None:
         await self._post("/control/filtering/refresh", {"whitelist": whitelist})

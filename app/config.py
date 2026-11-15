@@ -54,6 +54,10 @@ class ScopeConfig(BaseModel):
     rewrites: ScopeItem = Field(default_factory=ScopeItem)
     upstream_dns: ScopeItem = Field(default_factory=lambda: ScopeItem(prune=False))
     blocked_services: ScopeItem = Field(default_factory=lambda: ScopeItem(prune=False))
+    # Opt-in: these change resolver behaviour on followers, so existing installs
+    # keep their current behaviour until the user enables them.
+    dns_settings: ScopeItem = Field(default_factory=lambda: ScopeItem(enabled=False, prune=False))
+    querylog: ScopeItem = Field(default_factory=lambda: ScopeItem(enabled=False, prune=False))
 
 
 class AppConfig(BaseModel):

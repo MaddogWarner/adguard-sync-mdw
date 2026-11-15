@@ -3,7 +3,12 @@ from __future__ import annotations
 import logging
 
 from app.adguard.client import AdGuardClient
-from app.adguard.models import BlockedServices, HostSnapshot, UpstreamDnsConfig
+from app.adguard.models import (
+    BlockedServices,
+    HostSnapshot,
+    QuerylogConfig,
+    UpstreamDnsConfig,
+)
 from app.config import AppConfig
 from app.storage import Storage, utc_now
 from app.sync.differ import diff_host
@@ -160,6 +165,10 @@ class SyncEngine:
                 await client.set_dns_config(UpstreamDnsConfig.model_validate(action.detail))
             elif action.domain == Domain.BLOCKED_SERVICES:
                 await client.set_blocked_services(BlockedServices.model_validate(action.detail))
+            elif action.domain == Domain.DNS_SETTINGS:
+                await client.set_dns_settings(dict(action.detail))
+            elif action.domain == Domain.QUERYLOG:
+                await client.set_querylog_config(QuerylogConfig.model_validate(action.detail))
 
         if refresh_blocklists:
             await client.refresh_filters(whitelist=False)

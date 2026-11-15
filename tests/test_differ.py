@@ -1,11 +1,20 @@
 from __future__ import annotations
 
-from app.adguard.models import BlockedServices, Filter, Rewrite, UpstreamDnsConfig
+from app.adguard.models import (
+    BlockedServices,
+    DnsSettings,
+    Filter,
+    QuerylogConfig,
+    Rewrite,
+    UpstreamDnsConfig,
+)
 from app.config import ScopeConfig, ScopeItem
 from app.sync.differ import (
     diff_blocked_services,
+    diff_dns_settings,
     diff_filters,
     diff_host,
+    diff_querylog,
     diff_rewrites,
     diff_upstream,
     diff_user_rules,
@@ -149,3 +158,70 @@ def test_diff_host_honours_scope():
     )
 
     assert diff_host(primary, follower, scope) == []
+
+
+def test_diff_dns_settings_pushes_only_changed_fields():
+    primary = DnsSettings(ratelimit=0, dnssec_enabled=True, cache_optimistic=True)
+    follower = DnsSettings(ratelimit=20, dnssec_enabled=True, cache_optimistic=False)
+
+    result = diff_dns_settings(primary, follower)
+
+    assert [action.op for action in result.actions] == [Op.REPLACE]
+    assert result.actions[0].detail == {"ratelimit": 0, "cache_optimistic": True}
+    assert result.drift[0].follower_value == {"ratelimit": 20, "cache_optimistic": False}
+
+
+def test_diff_dns_settings_skips_fields_either_host_lacks():
+    primary = DnsSettings(ratelimit=0, ratelimit_whitelist=["192.168.1.10"])
+    follower = DnsSettings(ratelimit=0)
+
+    result = diff_dns_settings(primary, follower)
+
+    assert result.actions == []
+    assert result.drift == []
+
+
+def test_diff_dns_settings_noop_ignores_whitelist_order():
+    primary = DnsSettings(ratelimit_whitelist=["10.0.0.1", "10.0.0.2"])
+    follower = DnsSettings(ratelimit_whitelist=["10.0.0.2", "10.0.0.1"])
+
+    assert diff_dns_settings(primary, follower).actions == []
+
+
+def test_diff_querylog_replace_when_interval_differs():
+    primary = QuerylogConfig(interval=2592000000)
+    follower = QuerylogConfig(interval=7776000000)
+
+    result = diff_querylog(primary, follower)
+
+    assert [action.op for action in result.actions] == [Op.REPLACE]
+    assert result.actions[0].detail["interval"] == 2592000000
+    assert result.drift[0].target == "querylog"
+
+
+def test_diff_querylog_noop_ignores_ignored_order():
+    primary = QuerylogConfig(ignored=["a.test", "b.test"])
+    follower = QuerylogConfig(ignored=["b.test", "a.test"])
+
+    assert diff_querylog(primary, follower).actions == []
+
+
+def test_diff_host_skips_new_scopes_by_default_and_when_unsupported():
+    primary = snapshot(host="primary")
+    primary.dns_settings = DnsSettings(ratelimit=0)
+    primary.querylog = QuerylogConfig(interval=1)
+    follower = snapshot(host="follower")
+    follower.dns_settings = DnsSettings(ratelimit=20)
+    follower.querylog_supported = False
+
+    default_domains = {result.domain for result in diff_host(primary, follower, ScopeConfig())}
+    enabled = ScopeConfig(
+        dns_settings=ScopeItem(enabled=True, prune=False),
+        querylog=ScopeItem(enabled=True, prune=False),
+    )
+    enabled_domains = {result.domain for result in diff_host(primary, follower, enabled)}
+
+    assert Domain.DNS_SETTINGS not in default_domains
+    assert Domain.QUERYLOG not in default_domains
+    assert Domain.DNS_SETTINGS in enabled_domains
+    assert Domain.QUERYLOG not in enabled_domains

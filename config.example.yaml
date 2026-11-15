@@ -50,3 +50,11 @@ scope:
   blocked_services:
     enabled: true
     prune: false
+  # Opt-in. Rate limit, DNSSEC and cache settings (prune has no effect).
+  dns_settings:
+    enabled: false
+    prune: false
+  # Opt-in. Query log on/off, retention, client IP anonymisation, ignored domains.
+  querylog:
+    enabled: false
+    prune: false

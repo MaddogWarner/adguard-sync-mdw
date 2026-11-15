@@ -12,6 +12,17 @@ Dashboard requests are now validated for origin and CSRF token, and stored host 
 
 - Optional `DASHBOARD_ALLOWED_ORIGINS` lists exact dashboard origins and requires a matching Host, supporting reverse proxies that terminate TLS and restricting accepted dashboard POST hosts. Unset deployments retain the existing origin check.
 
+## [Unreleased]
+
+### Added
+
+- Opt-in `dns_settings` scope: syncs rate limit, rate-limit subnet lengths and
+  whitelist, DNSSEC, and cache settings from the primary. Only changed fields are
+  sent, and fields a host's AdGuard version does not report are skipped.
+- Opt-in `querylog` scope: syncs query log enabled, retention interval, client IP
+  anonymisation and ignored domains. Skipped on hosts without the
+  `querylog/config` endpoints.
+
 ## [1.2.2] - 2026-08-24
 
 First release since 1.2.1. It carries a backlog of security and supply-chain work
