@@ -12,6 +12,8 @@ class Domain(StrEnum):
     REWRITES = "rewrites"
     UPSTREAM_DNS = "upstream_dns"
     BLOCKED_SERVICES = "blocked_services"
+    DNS_SETTINGS = "dns_settings"
+    QUERYLOG = "querylog"
 
 
 class Op(StrEnum):

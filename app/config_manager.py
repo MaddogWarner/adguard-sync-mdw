@@ -29,6 +29,8 @@ SCOPE_KEYS = (
     "rewrites",
     "upstream_dns",
     "blocked_services",
+    "dns_settings",
+    "querylog",
 )
 
 

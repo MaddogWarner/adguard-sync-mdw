@@ -42,6 +42,10 @@ The header toggle switches between light and dark themes (it follows your system
 - DNS rewrites
 - Managed upstream DNS fields: `upstream_dns`, `bootstrap_dns`, `fallback_dns`, `upstream_mode`
 - Blocked services (the blocked-service IDs and their schedule)
+- DNS settings, opt-in (`scope.dns_settings`): `ratelimit`, `ratelimit_subnet_len_ipv4`, `ratelimit_subnet_len_ipv6`, `ratelimit_whitelist`, `dnssec_enabled`, `cache_enabled`, `cache_size`, `cache_ttl_min`, `cache_ttl_max`, `cache_optimistic`
+- Query log settings, opt-in (`scope.querylog`): `enabled`, `interval`, `anonymize_client_ip`, `ignored`, `ignored_enabled`
+
+DNS settings and query log sync are off by default because they change resolver behaviour on followers. Enable them in `scope` or on the dashboard settings page. DNS settings sync sends only the fields that differ, and skips any field that either host's AdGuard version does not report. Query log sync uses `querylog/config` and `querylog/config/update`; on hosts that lack those endpoints it is skipped, as with blocked services. Settings that the AdGuard API does not expose (for example optimistic cache answer TTL and max age) are not synced.
 
 Blocked-services sync uses AdGuard Home's `blocked_services/get` and `blocked_services/update` endpoints (AdGuard Home v0.107.x or newer). On older hosts that lack these endpoints the domain is skipped automatically without affecting the other domains.
 

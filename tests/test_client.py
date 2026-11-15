@@ -5,7 +5,7 @@ import pytest
 import respx
 
 from app.adguard.client import AdGuardApiError, AdGuardClient
-from app.adguard.models import BlockedServices
+from app.adguard.models import BlockedServices, QuerylogConfig
 
 
 @pytest.mark.asyncio
@@ -36,6 +36,9 @@ async def test_snapshot_assembles_host_snapshot(host_config):
                     "bootstrap_dns": ["9.9.9.9"],
                     "fallback_dns": [],
                     "upstream_mode": "parallel",
+                    "ratelimit": 0,
+                    "dnssec_enabled": True,
+                    "cache_optimistic": True,
                 },
             )
         )
@@ -43,6 +46,18 @@ async def test_snapshot_assembles_host_snapshot(host_config):
             return_value=httpx.Response(
                 200,
                 json={"ids": ["facebook"], "schedule": {"time_zone": "Local"}},
+            )
+        )
+        router.get("/control/querylog/config").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "enabled": True,
+                    "interval": 2592000000,
+                    "anonymize_client_ip": False,
+                    "ignored": [],
+                    "ignored_enabled": False,
+                },
             )
         )
 
@@ -57,6 +72,11 @@ async def test_snapshot_assembles_host_snapshot(host_config):
     assert result.rewrites[0].domain == "a.test"
     assert result.blocked_services.ids == ["facebook"]
     assert result.blocked_services_supported is True
+    assert result.dns_settings.ratelimit == 0
+    assert result.dns_settings.dnssec_enabled is True
+    assert result.dns_settings.cache_size is None
+    assert result.querylog.interval == 2592000000
+    assert result.querylog_supported is True
 
 
 @pytest.mark.asyncio
@@ -158,6 +178,9 @@ async def test_snapshot_tolerates_missing_blocked_services_endpoint(host_config)
         router.get("/control/blocked_services/get").mock(
             return_value=httpx.Response(404, text="not found")
         )
+        router.get("/control/querylog/config").mock(
+            return_value=httpx.Response(404, text="not found")
+        )
 
         client = AdGuardClient(host_config)
         result = await client.snapshot()
@@ -166,6 +189,41 @@ async def test_snapshot_tolerates_missing_blocked_services_endpoint(host_config)
     assert result.reachable is True
     assert result.blocked_services_supported is False
     assert result.blocked_services.ids == []
+    assert result.querylog_supported is False
+
+
+@pytest.mark.asyncio
+async def test_set_dns_settings_sends_only_given_keys(host_config):
+    with respx.mock(base_url="http://adguard.local") as router:
+        route = router.post("/control/dns_config").mock(return_value=httpx.Response(200))
+        client = AdGuardClient(host_config)
+        await client.set_dns_settings({"ratelimit": 0, "cache_optimistic": True})
+        await client.aclose()
+
+    assert route.calls.last.request.content == b'{"ratelimit":0,"cache_optimistic":true}'
+
+
+@pytest.mark.asyncio
+async def test_set_dns_settings_rejects_unmanaged_keys(host_config):
+    client = AdGuardClient(host_config)
+    with pytest.raises(ValueError, match="protection_enabled"):
+        await client.set_dns_settings({"protection_enabled": False})
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_set_querylog_config_puts_full_body(host_config):
+    with respx.mock(base_url="http://adguard.local") as router:
+        route = router.put("/control/querylog/config/update").mock(return_value=httpx.Response(200))
+        client = AdGuardClient(host_config)
+        await client.set_querylog_config(
+            QuerylogConfig(enabled=True, interval=86400000, ignored=["a.test"])
+        )
+        await client.aclose()
+
+    assert route.calls.last.request.content == (
+        b'{"enabled":true,"interval":86400000,"anonymize_client_ip":false,"ignored":["a.test"]}'
+    )
 
 
 @pytest.mark.asyncio

@@ -47,7 +47,9 @@ async def close_engine(engine: SyncEngine) -> None:
         await client.aclose()
 
 
-def mock_snapshot(router, base_url: str, *, filters=None, blocked_ids=None):
+def mock_snapshot(
+    router, base_url: str, *, filters=None, blocked_ids=None, dns_info=None, querylog=None
+):
     filters = filters or []
     router.get(f"{base_url}/control/status").mock(
         return_value=httpx.Response(200, json={"version": "v1"})
@@ -59,9 +61,23 @@ def mock_snapshot(router, base_url: str, *, filters=None, blocked_ids=None):
         )
     )
     router.get(f"{base_url}/control/rewrite/list").mock(return_value=httpx.Response(200, json=[]))
-    router.get(f"{base_url}/control/dns_info").mock(return_value=httpx.Response(200, json={}))
+    router.get(f"{base_url}/control/dns_info").mock(
+        return_value=httpx.Response(200, json=dns_info or {})
+    )
     router.get(f"{base_url}/control/blocked_services/get").mock(
         return_value=httpx.Response(200, json={"ids": blocked_ids or [], "schedule": None})
+    )
+    router.get(f"{base_url}/control/querylog/config").mock(
+        return_value=httpx.Response(
+            200,
+            json=querylog
+            or {
+                "enabled": True,
+                "interval": 2592000000,
+                "anonymize_client_ip": False,
+                "ignored": [],
+            },
+        )
     )
 
 
@@ -198,3 +214,83 @@ async def test_primary_auth_failure_records_offline_health(tmp_path):
     assert health[0]["name"] == "primary"
     assert health[0]["status"] == "offline"
     assert "HTTP 401" in health[0]["error"]
+
+
+PRIMARY_DNS = {"ratelimit": 0, "dnssec_enabled": True, "cache_optimistic": True}
+FOLLOWER_DNS = {"ratelimit": 20, "dnssec_enabled": True, "cache_optimistic": False}
+FOLLOWER_QUERYLOG = {
+    "enabled": True,
+    "interval": 7776000000,
+    "anonymize_client_ip": False,
+    "ignored": [],
+}
+
+
+@pytest.mark.asyncio
+async def test_engine_dns_settings_and_querylog_are_opt_in(tmp_path):
+    config = make_config(tmp_path)
+    storage = Storage(config.database_path)
+    storage.init_db()
+    engine = make_engine(config, storage)
+    with respx.mock as router:
+        mock_snapshot(router, "http://primary.local", dns_info=PRIMARY_DNS)
+        mock_snapshot(
+            router, "http://follower-a.local", dns_info=FOLLOWER_DNS, querylog=FOLLOWER_QUERYLOG
+        )
+
+        await engine.run_once()
+    await close_engine(engine)
+
+    assert storage.latest_run_per_follower()[0]["status"] == "in_sync"
+
+
+@pytest.mark.asyncio
+async def test_engine_pushes_dns_settings_and_querylog_when_enabled(tmp_path):
+    config = make_config(tmp_path)
+    config.scope.dns_settings.enabled = True
+    config.scope.querylog.enabled = True
+    storage = Storage(config.database_path)
+    storage.init_db()
+    engine = make_engine(config, storage)
+    with respx.mock as router:
+        mock_snapshot(router, "http://primary.local", dns_info=PRIMARY_DNS)
+        mock_snapshot(
+            router, "http://follower-a.local", dns_info=FOLLOWER_DNS, querylog=FOLLOWER_QUERYLOG
+        )
+        dns = router.post("http://follower-a.local/control/dns_config").mock(
+            return_value=httpx.Response(200)
+        )
+        querylog = router.put("http://follower-a.local/control/querylog/config/update").mock(
+            return_value=httpx.Response(200)
+        )
+
+        await engine.run_once()
+    await close_engine(engine)
+
+    assert storage.latest_run_per_follower()[0]["status"] == "drift_corrected"
+    assert dns.calls.last.request.content == b'{"ratelimit":0,"cache_optimistic":true}'
+    assert b'"interval":2592000000' in querylog.calls.last.request.content
+
+
+@pytest.mark.asyncio
+async def test_engine_dry_run_skips_dns_settings_and_querylog_writes(tmp_path):
+    config = make_config(tmp_path, dry_run=True)
+    config.scope.dns_settings.enabled = True
+    config.scope.querylog.enabled = True
+    storage = Storage(config.database_path)
+    storage.init_db()
+    engine = make_engine(config, storage)
+    with respx.mock(assert_all_called=False) as router:
+        mock_snapshot(router, "http://primary.local", dns_info=PRIMARY_DNS)
+        mock_snapshot(
+            router, "http://follower-a.local", dns_info=FOLLOWER_DNS, querylog=FOLLOWER_QUERYLOG
+        )
+        dns = router.post("http://follower-a.local/control/dns_config")
+        querylog = router.put("http://follower-a.local/control/querylog/config/update")
+
+        await engine.run_once()
+    await close_engine(engine)
+
+    assert storage.latest_run_per_follower()[0]["status"] == "drift_detected"
+    assert not dns.called
+    assert not querylog.called

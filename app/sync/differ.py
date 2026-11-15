@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from app.adguard.models import (
+    DNS_SETTINGS_FIELDS,
     BlockedServices,
+    DnsSettings,
     Filter,
     HostSnapshot,
+    QuerylogConfig,
     Rewrite,
     UpstreamDnsConfig,
 )
@@ -164,6 +167,52 @@ def diff_blocked_services(primary: BlockedServices, follower: BlockedServices) -
     return result
 
 
+def diff_dns_settings(primary: DnsSettings, follower: DnsSettings) -> DomainResult:
+    """Push primary values for fields both hosts report; skip fields either lacks."""
+    result = DomainResult(Domain.DNS_SETTINGS)
+    primary_value: dict[str, object] = {}
+    follower_value: dict[str, object] = {}
+    for name in DNS_SETTINGS_FIELDS:
+        p, f = getattr(primary, name), getattr(follower, name)
+        if p is None or f is None:
+            continue
+        if isinstance(p, list):
+            p, f = sorted(p), sorted(f)
+        if p != f:
+            primary_value[name] = p
+            follower_value[name] = f
+    if primary_value:
+        result.actions.append(
+            ChangeAction(Domain.DNS_SETTINGS, Op.REPLACE, "dns_settings", primary_value)
+        )
+        result.drift.append(
+            DriftItem(Domain.DNS_SETTINGS, "changed", "dns_settings", primary_value, follower_value)
+        )
+    return result
+
+
+def _normalise_querylog(value: QuerylogConfig) -> dict[str, object]:
+    data = value.model_dump(exclude_none=True)
+    data["ignored"] = sorted(value.ignored)
+    return data
+
+
+def diff_querylog(primary: QuerylogConfig, follower: QuerylogConfig) -> DomainResult:
+    result = DomainResult(Domain.QUERYLOG)
+    primary_value = _normalise_querylog(primary)
+    follower_value = _normalise_querylog(follower)
+    if primary_value != follower_value:
+        result.actions.append(
+            ChangeAction(
+                Domain.QUERYLOG, Op.REPLACE, "querylog", primary.model_dump(exclude_none=True)
+            )
+        )
+        result.drift.append(
+            DriftItem(Domain.QUERYLOG, "changed", "querylog", primary_value, follower_value)
+        )
+    return result
+
+
 def diff_host(
     primary_snapshot: HostSnapshot,
     follower_snapshot: HostSnapshot,
@@ -211,4 +260,14 @@ def diff_host(
                 follower_snapshot.blocked_services,
             )
         )
+    if scope.dns_settings.enabled:
+        results.append(
+            diff_dns_settings(primary_snapshot.dns_settings, follower_snapshot.dns_settings)
+        )
+    if (
+        scope.querylog.enabled
+        and primary_snapshot.querylog_supported
+        and follower_snapshot.querylog_supported
+    ):
+        results.append(diff_querylog(primary_snapshot.querylog, follower_snapshot.querylog))
     return results
