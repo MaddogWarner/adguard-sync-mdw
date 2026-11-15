@@ -33,10 +33,10 @@ jobs:
         run: pip install pip-audit bandit
 
       - name: pip-audit
-        run: pip-audit || true
+        run: pip-audit
 
       - name: Bandit SAST
-        run: bandit -r . -ll -x ./.git,./node_modules --quiet || true
+        run: bandit -r . -ll -x ./.git,./node_modules --quiet
 
       - name: Semgrep
         run: |

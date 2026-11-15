@@ -19,6 +19,7 @@ from app.storage import Storage
 templates = Jinja2Templates(directory="app/web/templates")
 templates.env.globals["app_version"] = __version__
 security = HTTPBasic(auto_error=False)
+MAX_FORM_BYTES = 64 * 1024
 
 
 def auth_dependency(runtime: AppRuntime):
@@ -33,8 +34,13 @@ def auth_dependency(runtime: AppRuntime):
         expected_password = (
             config.dashboard_password.get_secret_value() if config.dashboard_password else ""
         )
-        user_ok = secrets.compare_digest(credentials.username, config.dashboard_user or "")
-        password_ok = secrets.compare_digest(credentials.password, expected_password)
+        # Compare as bytes: str inputs raise TypeError on non-ASCII characters.
+        user_ok = secrets.compare_digest(
+            credentials.username.encode(), (config.dashboard_user or "").encode()
+        )
+        password_ok = secrets.compare_digest(
+            credentials.password.encode(), expected_password.encode()
+        )
         if not (user_ok and password_ok):
             raise_auth()
 
@@ -199,7 +205,13 @@ def settings_context(
 
 
 async def _urlencoded_form(request: Request) -> dict[str, FormValue]:
-    body = (await request.body()).decode("utf-8")
+    body_bytes = await request.body()
+    if len(body_bytes) > MAX_FORM_BYTES:
+        raise HTTPException(status_code=413, detail="Form body too large")
+    try:
+        body = body_bytes.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Form body must be UTF-8") from exc
     parsed = parse_qs(body, keep_blank_values=True)
     result: dict[str, FormValue] = {}
     list_keys = {

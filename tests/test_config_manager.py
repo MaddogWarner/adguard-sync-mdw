@@ -161,3 +161,56 @@ def test_raw_config_from_form_requires_existing_password_refs():
             },
             {},
         )
+
+
+def _path_form(**overrides):
+    form = {
+        "interval_minutes": "5",
+        "history_retention_days": "14",
+        "log_level": "INFO",
+        "database_path": "/data/adguard-sync.db",
+        "primary_name": "primary",
+        "primary_url": "http://primary.local",
+        "primary_username": "admin",
+    }
+    form.update(overrides)
+    return form
+
+
+_PATH_EXISTING = {
+    "primary": {"password": "${ADGUARD_PRIMARY_PASSWORD}", "url": "http://primary.local"}
+}
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"database_path": "/etc/evil.db"},
+        {"database_path": "/data/../etc/evil.db"},
+        {"database_path": "relative.db"},
+        {"tls_cert_file": "/etc/shadow", "tls_key_file": "/config/key.pem"},
+        {"tls_key_file": "/proc/self/environ"},
+    ],
+)
+def test_raw_config_from_form_rejects_paths_outside_allowed_dirs(overrides):
+    with pytest.raises(ConfigError, match="must be an absolute path inside"):
+        raw_config_from_form(_path_form(**overrides), _PATH_EXISTING)
+
+
+def test_raw_config_from_form_accepts_allowed_and_unchanged_paths():
+    raw = raw_config_from_form(
+        _path_form(
+            database_path="/data/other.db",
+            tls_cert_file="/config/cert.pem",
+            tls_key_file="/data/key.pem",
+        ),
+        _PATH_EXISTING,
+    )
+    assert raw["database_path"] == "/data/other.db"
+    assert raw["tls"]["cert_file"] == "/config/cert.pem"
+
+    existing = {**_PATH_EXISTING, "tls": {"cert_file": "/opt/c.pem", "key_file": "/opt/k.pem"}}
+    raw = raw_config_from_form(
+        _path_form(tls_cert_file="/opt/c.pem", tls_key_file="/opt/k.pem"), existing
+    )
+    assert raw["tls"]["key_file"] == "/opt/k.pem"
