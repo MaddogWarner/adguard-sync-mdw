@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Security
+
+- Runtime image now applies Debian security updates at build time, picking up the
+  `zlib1g` fix for CVE-2026-76844 (code-scanning #344).
+
 ## [1.3.0] - 15/11/2026
 
 ### Changed
